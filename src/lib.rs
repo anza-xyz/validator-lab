@@ -41,6 +41,7 @@ impl SolanaRoot {
     }
 }
 
+pub mod genesis;
 pub mod kubernetes;
 pub mod release;
 

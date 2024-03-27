@@ -13,7 +13,7 @@
     - [x] Build from local commit
     - [x] Build from tar (release version)
 - [ ] Create Genesis
-    - [ ] Generate faucet and bootstrap accounts
+    - [x] Generate faucet and bootstrap accounts
     - [ ] Build genesis
 - [ ] Docker Build
     - [ ] Build Bootstrap Image

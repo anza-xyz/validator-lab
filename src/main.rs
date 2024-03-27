@@ -4,6 +4,7 @@ use {
     std::fs,
     strum::VariantNames,
     validator_lab::{
+        genesis::Genesis,
         kubernetes::Kubernetes,
         release::{BuildConfig, BuildType, DeployMethod},
         SolanaRoot,
@@ -125,4 +126,6 @@ async fn main() {
             return;
         }
     }
+
+    let _genesis = Genesis::new(solana_root.get_root_path());
 }
