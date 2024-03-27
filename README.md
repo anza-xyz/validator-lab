@@ -22,9 +22,18 @@ kubectl create ns <namespace>
 ```
 
 ### Run
+#### Build Agave from local agave repo
 ```
 cargo run --bin cluster --
     -n <namespace>
     --deploy-method local
     --local-path <path-to-local-agave-monorepo>
+```
+
+#### Build specific Agave release
+```
+cargo run --bin cluster --
+    -n <namespace>
+    --deploy-method tar
+    --release-channel <agave-version: e.g. v1.17.28> # note: MUST include the "v" 
 ```

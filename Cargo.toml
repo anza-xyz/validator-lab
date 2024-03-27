@@ -8,13 +8,19 @@ license = "Apache-2.0"
 edition = "2021"
 
 [dependencies]
+bzip2 = "0.4.4"
 clap = "2.33.1"
+console = "0.15.8"
 git2 = "0.18.3"
+indicatif = "0.17.8"
 k8s-openapi ={ version = "0.20.0", features = ["v1_28"] }
 kube = "0.87.2"
 log = "0.4.21"
+reqwest = { version = "0.12.2", features = ["blocking", "brotli", "deflate", "gzip", "rustls-tls", "json"] }
 solana-logger = "1.18.7"
+tar = "0.4.40"
 tokio = { version = "1.29.1", features = ["full"] }
+url = "2.5.0"
 
 [build-dependencies]
 rustc_version = "0.4"

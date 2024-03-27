@@ -46,6 +46,13 @@ fn parse_matches() -> ArgMatches<'static> {
                 .long("debug-build")
                 .help("Enable debug build"),
         )
+        .arg(
+            Arg::with_name("release_channel")
+                .long("release-channel")
+                .takes_value(true)
+                .required_if("deploy_method", "tar") // Require if deploy_method is "tar"
+                .help("release version. e.g. v1.17.2. Required if '--deploy-method tar'"),
+        )
         .get_matches()
 }
 
@@ -120,6 +127,10 @@ async fn main() {
         matches.is_present("skip_build"),
         matches.is_present("debug_build"),
         &solana_root.get_root_path(),
+        matches
+            .value_of("release_channel")
+            .unwrap_or_default()
+            .to_string(),
     )
     .unwrap_or_else(|err| {
         panic!("Error creating BuildConfig: {}", err);
