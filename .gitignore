@@ -1,0 +1,29 @@
+farf/
+target/
+/solana-release/
+/solana-release.tar.bz2
+/docker-build/
+
+**/*.rs.bk
+.cargo
+
+/config/
+/config-k8s/
+
+.cache
+
+# log files
+*.log
+log-*.txt
+log-*/
+
+# intellij files
+.idea/
+/solana.iml
+/.vscode/
+
+# fetch-spl.sh artifacts
+/spl-genesis-args.sh
+/spl_*.so
+
+.DS_Store

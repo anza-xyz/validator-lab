@@ -1,0 +1,26 @@
+[package]
+name = "validator-lab"
+version = "0.0.1"
+authors = ["Solana Labs Maintainers <maintainers@solanalabs.com>"]
+repository = "https://https://github.com/anza-xyz/validator-lab"
+homepage = "https://anza.xyz/"
+license = "Apache-2.0"
+edition = "2021"
+
+[dependencies]
+clap = "2.33.1"
+k8s-openapi ={ version = "0.20.0", features = ["v1_28"] }
+kube = "0.87.2"
+log = "0.4.21"
+solana-logger = "1.18.7"
+tokio = { version = "1.29.1", features = ["full"] }
+
+[build-dependencies]
+rustc_version = "0.4"
+
+[[bin]]
+name = "cluster"
+path = "src/main.rs"
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
