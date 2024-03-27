@@ -1,7 +1,12 @@
 use {
     clap::{crate_description, crate_name, App, Arg, ArgMatches},
     log::*,
-    validator_lab::kubernetes::Kubernetes,
+    std::fs,
+    validator_lab::{
+        kubernetes::Kubernetes,
+        release::{BuildConfig, DeployMethod},
+        SolanaRoot,
+    },
 };
 
 fn parse_matches() -> ArgMatches<'static> {
@@ -14,6 +19,32 @@ fn parse_matches() -> ArgMatches<'static> {
                 .takes_value(true)
                 .default_value("default")
                 .help("namespace to deploy test cluster"),
+        )
+        .arg(
+            Arg::with_name("deploy_method")
+                .long("deploy-method")
+                .takes_value(true)
+                .possible_values(&["local", "tar", "skip"])
+                .default_value("local")
+                .help("Deploy method. tar, local, skip. [default: local]"),
+        )
+        .arg(
+            Arg::with_name("local-path")
+                .long("local-path")
+                .takes_value(true)
+                .required_if("deploy-method", "local")
+                .conflicts_with_all(&["tar", "skip"])
+                .help("Path to local agave repo. Required for 'local' deploy method."),
+        )
+        .arg(
+            Arg::with_name("skip_build")
+                .long("skip-build")
+                .help("Disable building for building from local repo"),
+        )
+        .arg(
+            Arg::with_name("debug_build")
+                .long("debug-build")
+                .help("Enable debug build"),
         )
         .get_matches()
 }
@@ -34,8 +65,41 @@ async fn main() {
         namespace: matches.value_of("cluster_namespace").unwrap_or_default(),
     };
 
-    let kub_controller = Kubernetes::new(environment_config.namespace).await;
+    let deploy_method = matches.value_of("deploy_method").unwrap();
+    let local_path = matches.value_of("local-path");
+    match deploy_method {
+        method if method == DeployMethod::Local.to_string() => {
+            if local_path.is_none() {
+                panic!("Error: --local-path is required for 'local' deploy-method.");
+            }
+        }
+        _ => {
+            if local_path.is_some() {
+                warn!("WARN: --local-path <path> will be ignored");
+            }
+        }
+    }
 
+    let solana_root = match matches.value_of("local-path") {
+        Some(path) => SolanaRoot::new_from_path(path.into()),
+        None => SolanaRoot::default(),
+    };
+
+    if let Ok(metadata) = fs::metadata(solana_root.get_root_path()) {
+        if !metadata.is_dir() {
+            return error!(
+                "Build path is not a directory: {:?}",
+                solana_root.get_root_path()
+            );
+        }
+    } else {
+        return error!(
+            "Build directory not found: {:?}",
+            solana_root.get_root_path()
+        );
+    }
+
+    let kub_controller = Kubernetes::new(environment_config.namespace).await;
     match kub_controller.namespace_exists().await {
         Ok(true) => (),
         Ok(false) => {
@@ -46,7 +110,25 @@ async fn main() {
             return;
         }
         Err(err) => {
-            error!("{}", err);
+            error!("Error: {}", err);
+            return;
+        }
+    }
+
+    let build_config = BuildConfig::new(
+        deploy_method,
+        matches.is_present("skip_build"),
+        matches.is_present("debug_build"),
+        &solana_root.get_root_path(),
+    )
+    .unwrap_or_else(|err| {
+        panic!("Error creating BuildConfig: {}", err);
+    });
+
+    match build_config.prepare().await {
+        Ok(_) => info!("Validator setup prepared successfully"),
+        Err(err) => {
+            error!("Error: {}", err);
             return;
         }
     }
