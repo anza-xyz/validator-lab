@@ -23,7 +23,7 @@ pub enum BuildType {
 pub struct BuildConfig {
     deploy_method: DeployMethod,
     build_type: BuildType,
-    _build_path: PathBuf,
+    build_path: PathBuf,
     solana_root_path: PathBuf,
 }
 
@@ -41,9 +41,13 @@ impl BuildConfig {
         Ok(BuildConfig {
             deploy_method,
             build_type,
-            _build_path: build_path,
+            build_path,
             solana_root_path: solana_root_path.clone(),
         })
+    }
+
+    pub fn build_path(&self) -> PathBuf {
+        self.build_path.clone()
     }
 
     pub async fn prepare(&self) -> Result<(), Box<dyn Error>> {

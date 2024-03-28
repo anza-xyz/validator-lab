@@ -12,9 +12,9 @@
 - [x] Setup build config Local
     - [x] Build from local commit
     - [x] Build from tar (release version)
-- [ ] Create Genesis
+- [x] Create Genesis
     - [x] Generate faucet and bootstrap accounts
-    - [ ] Build genesis
+    - [x] Build genesis
 - [ ] Docker Build
     - [ ] Build Bootstrap Image
     - [ ] Push Image to registry
