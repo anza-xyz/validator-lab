@@ -7142,7 +7142,6 @@ dependencies = [
  "strum_macros 0.26.2",
  "subtle",
  "tar",
- "tiny-bip39",
  "tokio",
  "url 2.5.0",
  "zeroize",

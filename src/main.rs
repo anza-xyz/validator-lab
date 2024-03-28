@@ -7,7 +7,7 @@ use {
         genesis::Genesis,
         kubernetes::Kubernetes,
         release::{BuildConfig, BuildType, DeployMethod},
-        SolanaRoot,
+        SolanaRoot, ValidatorType,
     },
 };
 
@@ -127,12 +127,20 @@ async fn main() {
         }
     }
 
-    let genesis = Genesis::new(solana_root.get_root_path());
+    let mut genesis = Genesis::new(solana_root.get_root_path());
 
     match genesis.generate_faucet() {
         Ok(_) => (),
         Err(err) => {
             error!("generate faucet error! {}", err);
+            return;
+        }
+    }
+
+    match genesis.generate_accounts(ValidatorType::Bootstrap, 1) {
+        Ok(_) => (),
+        Err(err) => {
+            error!("generate accounts error! {}", err);
             return;
         }
     }

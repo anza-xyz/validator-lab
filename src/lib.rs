@@ -45,16 +45,16 @@ impl SolanaRoot {
 pub enum ValidatorType {
     Bootstrap,
     Standard,
-    NonVoting,
+    RPC,
     Client,
 }
 
 impl std::fmt::Display for ValidatorType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match *self {
-            ValidatorType::Bootstrap => write!(f, "bootstrap"),
+            ValidatorType::Bootstrap => write!(f, "bootstrap-validator"),
             ValidatorType::Standard => write!(f, "validator"),
-            ValidatorType::NonVoting => write!(f, "non-voting"),
+            ValidatorType::RPC => write!(f, "rpc-node"),
             ValidatorType::Client => write!(f, "client"),
         }
     }
