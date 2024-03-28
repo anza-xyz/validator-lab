@@ -7,7 +7,7 @@ use {
         genesis::Genesis,
         kubernetes::Kubernetes,
         release::{BuildConfig, BuildType, DeployMethod},
-        SolanaRoot,
+        SolanaRoot, ValidatorType,
     },
 };
 
@@ -25,7 +25,6 @@ fn parse_matches() -> clap::ArgMatches {
             Arg::new("local_path")
                 .long("local-path")
                 .takes_value(true)
-                .conflicts_with("release_channel")
                 .help("Build validator from local Agave repo. Specify path here."),
         )
         .arg(
@@ -40,7 +39,6 @@ fn parse_matches() -> clap::ArgMatches {
             Arg::with_name("release_channel")
                 .long("release-channel")
                 .takes_value(true)
-                .conflicts_with("local_path")
                 .help("Pulls specific release version. e.g. v1.17.2"),
         )
         .group(
@@ -80,9 +78,7 @@ async fn main() {
         DeployMethod::ReleaseChannel(_) => SolanaRoot::default(),
     };
 
-    let build_type: BuildType = matches
-        .value_of_t("build_type")
-        .unwrap_or_else(|e| e.exit());
+    let build_type: BuildType = matches.value_of_t("build_type").unwrap();
 
     if let Ok(metadata) = fs::metadata(solana_root.get_root_path()) {
         if !metadata.is_dir() {
@@ -127,12 +123,20 @@ async fn main() {
         }
     }
 
-    let genesis = Genesis::new(solana_root.get_root_path());
+    let mut genesis = Genesis::new(solana_root.get_root_path());
 
     match genesis.generate_faucet() {
         Ok(_) => (),
         Err(err) => {
             error!("generate faucet error! {}", err);
+            return;
+        }
+    }
+
+    match genesis.generate_accounts(ValidatorType::Bootstrap, 1) {
+        Ok(_) => (),
+        Err(err) => {
+            error!("generate accounts error! {}", err);
             return;
         }
     }
