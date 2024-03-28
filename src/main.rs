@@ -127,5 +127,13 @@ async fn main() {
         }
     }
 
-    let _genesis = Genesis::new(solana_root.get_root_path());
+    let genesis = Genesis::new(solana_root.get_root_path());
+
+    match genesis.generate_faucet() {
+        Ok(_) => (),
+        Err(err) => {
+            error!("generate faucet error! {}", err);
+            return;
+        }
+    }
 }
