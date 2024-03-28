@@ -58,6 +58,7 @@ pub mod genesis;
 pub mod kubernetes;
 pub mod release;
 
+static SUN: Emoji = Emoji("🌞 ", "");
 static PACKAGE: Emoji = Emoji("📦 ", "");
 static TRUCK: Emoji = Emoji("🚚 ", "");
 

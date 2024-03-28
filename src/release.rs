@@ -28,7 +28,6 @@ pub enum BuildType {
 pub struct BuildConfig {
     deploy_method: DeployMethod,
     build_type: BuildType,
-    _build_path: PathBuf,
     solana_root_path: PathBuf,
 }
 
@@ -37,18 +36,12 @@ impl BuildConfig {
         deploy_method: DeployMethod,
         build_type: BuildType,
         solana_root_path: &Path,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
-        let build_path = match deploy_method {
-            DeployMethod::Local(_) => solana_root_path.join("farf/bin"),
-            DeployMethod::ReleaseChannel(_) => solana_root_path.join("solana-release/bin"),
-        };
-
-        Ok(BuildConfig {
+    ) -> Self {
+        Self {
             deploy_method,
             build_type,
-            _build_path: build_path,
             solana_root_path: solana_root_path.to_path_buf(),
-        })
+        }
     }
 
     pub async fn prepare(&self) -> Result<(), Box<dyn Error>> {
