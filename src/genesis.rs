@@ -145,7 +145,7 @@ impl Genesis {
         }
 
         info!(
-            "generating {} {} accounts...",
+            "generating {} {} account(s)...",
             number_of_accounts, validator_type
         );
 

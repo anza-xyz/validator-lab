@@ -176,7 +176,7 @@ impl BuildConfig {
             release_channel,
             "/solana-release-x86_64-unknown-linux-gnu.tar.bz2"
         );
-        info!("download_url: {}", download_url);
+        debug!("download_url: {}", download_url);
 
         download_to_temp(
             download_url.as_str(),
