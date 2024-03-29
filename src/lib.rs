@@ -60,12 +60,14 @@ impl std::fmt::Display for ValidatorType {
     }
 }
 
+pub mod docker;
 pub mod genesis;
 pub mod kubernetes;
 pub mod release;
 
-static SUN: Emoji = Emoji("🌞 ", "");
+static BUILD: Emoji = Emoji("👷 ", "");
 static PACKAGE: Emoji = Emoji("📦 ", "");
+static SUN: Emoji = Emoji("🌞 ", "");
 static TRUCK: Emoji = Emoji("🚚 ", "");
 
 /// Creates a new process bar for processing that will take an unknown amount of time

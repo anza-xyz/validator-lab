@@ -16,7 +16,7 @@
     - [x] Generate faucet and bootstrap accounts
     - [x] Build genesis
 - [ ] Docker Build
-    - [ ] Build Bootstrap Image
+    - [x] Build Bootstrap Image
     - [ ] Push Image to registry
 - [ ] Create & Deploy Secrets
     - [ ] Bootstrap
