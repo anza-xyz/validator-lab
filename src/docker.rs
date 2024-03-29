@@ -1,12 +1,11 @@
 use {
-    crate::{
-        boxed_error, new_spinner_progress_bar, ValidatorType, BUILD,
-    },
+    crate::{new_spinner_progress_bar, release::DeployMethod, ValidatorType, BUILD},
     log::*,
     std::{
+        env,
         error::Error,
         fs,
-        path::PathBuf,
+        path::{Path, PathBuf},
         process::{Command, Output, Stdio},
     },
 };
@@ -16,7 +15,7 @@ pub struct DockerConfig {
     pub image_name: String,
     pub tag: String,
     pub registry: String,
-    deploy_method: String,
+    deploy_method: DeployMethod,
 }
 
 impl DockerConfig {
@@ -25,7 +24,7 @@ impl DockerConfig {
         image_name: String,
         tag: String,
         registry: String,
-        deploy_method: String,
+        deploy_method: DeployMethod,
     ) -> Self {
         DockerConfig {
             base_image,
@@ -36,7 +35,21 @@ impl DockerConfig {
         }
     }
 
-    pub fn build_image(&self, solana_root_path: PathBuf, validator_type: &ValidatorType) -> Result<(), Box<dyn Error>> {
+    pub fn build_image(
+        &self,
+        solana_root_path: PathBuf,
+        validator_type: &ValidatorType,
+    ) -> Result<(), Box<dyn Error>> {
+        match validator_type {
+            ValidatorType::Bootstrap => (),
+            ValidatorType::Standard | ValidatorType::RPC | ValidatorType::Client => {
+                return Err(format!(
+                    "Build docker image for validator type: {} not supported yet",
+                    validator_type
+                )
+                .into());
+            }
+        }
         let image_name = format!("{}-{}", validator_type, self.image_name);
         let docker_path = solana_root_path.join(format!("{}/{}", "docker-build", validator_type));
         match self.create_base_image(solana_root_path, image_name, docker_path, validator_type) {
@@ -46,16 +59,16 @@ impl DockerConfig {
                     Ok(())
                 } else {
                     error!("Failed to build base image");
-                    Err(boxed_error!(String::from_utf8_lossy(&res.stderr)))
+                    Err(String::from_utf8_lossy(&res.stderr).into())
                 }
             }
             Err(err) => Err(err),
         }
     }
 
-    pub fn create_base_image(
+    fn create_base_image(
         &self,
-        solana_root_path: PathBuf, 
+        solana_root_path: PathBuf,
         image_name: String,
         docker_path: PathBuf,
         validator_type: &ValidatorType,
@@ -100,34 +113,46 @@ impl DockerConfig {
         output
     }
 
-    pub fn create_dockerfile(
+    fn copy_file_to_docker(
+        source_dir: &Path,
+        docker_dir: &Path,
+        file_name: &str,
+    ) -> std::io::Result<()> {
+        let source_path = source_dir.join("src/scripts").join(file_name);
+        let destination_path = docker_dir.join(file_name);
+        fs::copy(&source_path, &destination_path)?;
+        Ok(())
+    }
+
+    fn create_dockerfile(
         &self,
         validator_type: &ValidatorType,
         docker_path: PathBuf,
         content: Option<&str>,
-    ) -> Result<PathBuf, Box<dyn std::error::Error>> {
-        match validator_type {
-            ValidatorType::Bootstrap | ValidatorType::Standard | ValidatorType::RPC => (),
-            _ => {
-                return Err(boxed_error!(format!(
-                    "Invalid validator type: {}. Exiting...",
-                    validator_type
-                )));
-            }
-        }
-
+    ) -> Result<PathBuf, Box<dyn Error>> {
         if docker_path.exists() {
             fs::remove_dir_all(&docker_path)?;
         }
         fs::create_dir_all(&docker_path)?;
 
-        let solana_build_directory = if self.deploy_method == "tar" {
-            "solana-release"
-        } else {
-            "farf"
-        };
+        if let DeployMethod::Local(_) = self.deploy_method {
+            if validator_type == &ValidatorType::Bootstrap {
+                let manifest_path =
+                    PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("$CARGO_MANIFEST_DIR"));
+                let files_to_copy = ["bootstrap-startup-script.sh", "common.sh"];
+                for file_name in files_to_copy.iter() {
+                    Self::copy_file_to_docker(&manifest_path, &docker_path, file_name)?;
+                }
+            }
+        }
 
-        //TODO: I Removed some stuff from this dockerfile. may need to add some stuff back in
+        let (solana_build_directory, startup_script_directory) =
+            if let DeployMethod::ReleaseChannel(_) = self.deploy_method {
+                ("solana-release", "./src/scripts".to_string())
+            } else {
+                ("farf", format!("./docker-build/{}", validator_type))
+            };
+
         let dockerfile = format!(
             r#"
 FROM {}
@@ -139,8 +164,9 @@ RUN adduser solana sudo
 USER solana
 
 RUN mkdir -p /home/solana/k8s-cluster-scripts
-COPY ./src/scripts /home/solana/k8s-cluster-scripts
-
+# TODO: this needs to be changed for non bootstrap, this should be ./src/scripts/<validator-type>-startup-scripts.sh
+COPY {startup_script_directory}/bootstrap-startup-script.sh /home/solana/k8s-cluster-scripts
+ 
 RUN mkdir -p /home/solana/ledger
 COPY --chown=solana:solana ./config-k8s/bootstrap-validator  /home/solana/ledger
 
@@ -160,10 +186,9 @@ WORKDIR /home/solana
 
         debug!("dockerfile: {}", dockerfile);
         std::fs::write(
-            docker_path.as_path().join("Dockerfile"),
+            docker_path.join("Dockerfile"),
             content.unwrap_or(dockerfile.as_str()),
-        )
-        .expect("saved Dockerfile");
+        )?;
         Ok(docker_path)
     }
 }

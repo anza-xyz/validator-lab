@@ -277,7 +277,7 @@ impl Genesis {
         let fetch_spl_file = solana_root_path.join("fetch-spl.sh");
         fetch_spl(&fetch_spl_file)?;
 
-        // add in spl stuff
+        // add in spl
         let spl_file = solana_root_path.join("spl-genesis-args.sh");
         parse_spl_genesis_file(&spl_file)
     }
