@@ -9,6 +9,7 @@ edition = "2021"
 
 [dependencies]
 clap = "2.33.1"
+git2 = "0.18.3"
 k8s-openapi ={ version = "0.20.0", features = ["v1_28"] }
 kube = "0.87.2"
 log = "0.4.21"
