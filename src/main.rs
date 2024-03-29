@@ -222,7 +222,15 @@ async fn main() {
         }
     }
 
-    let build_config = BuildConfig::new(deploy_method, build_type, solana_root.get_root_path());
+    let build_config = BuildConfig::new(
+        deploy_method.clone(),
+        build_type,
+        &solana_root.get_root_path(),
+        matches.is_present("docker_build"),
+    )
+    .unwrap_or_else(|err| {
+        panic!("Error creating BuildConfig: {}", err);
+    });
 
     let genesis_flags = GenesisFlags {
         hashes_per_tick: matches
@@ -320,7 +328,7 @@ async fn main() {
             .unwrap_or_default()
             .to_string(),
         matches.value_of("registry_name").unwrap().to_string(),
-        deploy_method.to_string(),
+        deploy_method,
     );
 
     if build_config.docker_build() {

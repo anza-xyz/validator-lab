@@ -11,7 +11,7 @@ use {
     strum_macros::{EnumString, IntoStaticStr, VariantNames},
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum DeployMethod {
     Local(String),
     ReleaseChannel(String),
