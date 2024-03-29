@@ -4,6 +4,7 @@ use {
     std::fs,
     strum::VariantNames,
     validator_lab::{
+        docker::DockerConfig,
         genesis::{Genesis, GenesisFlags},
         kubernetes::Kubernetes,
         release::{BuildConfig, BuildType, DeployMethod},
@@ -107,6 +108,47 @@ fn parse_matches() -> clap::ArgMatches {
                 .long("bootstrap-validator-stake-sol")
                 .takes_value(true)
                 .help("Genesis config. bootstrap validator stake sol"),
+        )
+        //Docker config
+        .arg(
+            Arg::with_name("docker_build")
+                .long("docker-build")
+                .requires("registry_name")
+                .requires("image_name")
+                .requires("base_image")
+                .requires("image_tag")
+                .help("Build Docker images. Build new docker images"),
+        )
+        .arg(
+            Arg::with_name("registry_name")
+                .long("registry")
+                .takes_value(true)
+                .required(true)
+                .help("Registry to push docker image to"),
+        )
+        .arg(
+            Arg::with_name("image_name")
+                .long("image-name")
+                .takes_value(true)
+                .default_value("k8s-cluster-image")
+                .required(true)
+                .help("Docker image name. Will be prepended with validator_type (bootstrap or validator)"),
+        )
+        .arg(
+            Arg::with_name("base_image")
+                .long("base-image")
+                .takes_value(true)
+                .default_value("ubuntu:20.04")
+                .required(true)
+                .help("Docker base image"),
+        )
+        .arg(
+            Arg::with_name("image_tag")
+                .long("tag")
+                .takes_value(true)
+                .required(true)
+                .default_value("latest")
+                .help("Docker image tag."),
         )
         .get_matches()
 }
@@ -263,6 +305,32 @@ async fn main() {
         Err(err) => {
             error!("generate genesis error! {}", err);
             return;
+        }
+    }
+
+    //unwraps are safe here. since their requirement is enforced by argmatches
+    let docker = DockerConfig::new(
+        matches
+            .value_of("base_image")
+            .unwrap_or_default()
+            .to_string(),
+        matches.value_of("image_name").unwrap().to_string(),
+        matches
+            .value_of("image_tag")
+            .unwrap_or_default()
+            .to_string(),
+        matches.value_of("registry_name").unwrap().to_string(),
+        deploy_method.to_string(),
+    );
+
+    if build_config.docker_build() {
+        let image_type = ValidatorType::Bootstrap;
+        match docker.build_image(solana_root.get_root_path(), &image_type) {
+            Ok(_) => info!("{} image built successfully", image_type),
+            Err(err) => {
+                error!("Exiting........ {}", err);
+                return;
+            }
         }
     }
 }

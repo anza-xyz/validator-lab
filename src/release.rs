@@ -29,19 +29,36 @@ pub struct BuildConfig {
     deploy_method: DeployMethod,
     build_type: BuildType,
     solana_root_path: PathBuf,
+    docker_build: bool,
 }
 
 impl BuildConfig {
     pub fn new(
         deploy_method: DeployMethod,
         build_type: BuildType,
-        solana_root_path: &Path,
-    ) -> Self {
-        Self {
+        solana_root_path: &PathBuf,
+        docker_build: bool,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let build_path = match deploy_method {
+            DeployMethod::Local(_) => solana_root_path.join("farf/bin"),
+            DeployMethod::ReleaseChannel(_) => solana_root_path.join("solana-release/bin"),
+        };
+
+        Ok(BuildConfig {
             deploy_method,
             build_type,
-            solana_root_path: solana_root_path.to_path_buf(),
-        }
+            build_path,
+            solana_root_path: solana_root_path.clone(),
+            docker_build,
+        })
+    }
+
+    pub fn build_path(&self) -> PathBuf {
+        self.build_path.clone()
+    }
+
+    pub fn docker_build(&self) -> bool {
+        self.docker_build
     }
 
     pub async fn prepare(&self) -> Result<(), Box<dyn Error>> {
