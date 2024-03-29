@@ -1,36 +1,64 @@
 use {
-    crate::{new_spinner_progress_bar, release::DeployMethod, ValidatorType, BUILD},
+    crate::{new_spinner_progress_bar, release::DeployMethod, ValidatorType, BUILD, ROCKET},
     log::*,
     std::{
         env,
         error::Error,
+        fmt::{self, Display, Formatter},
         fs,
         path::{Path, PathBuf},
-        process::{Command, Output, Stdio},
+        process::{Command, Stdio},
     },
 };
 
+pub struct DockerImage {
+    registry: String,
+    validator_type: ValidatorType,
+    image_name: String,
+    tag: String,
+}
+
+impl DockerImage {
+    // Constructor to create a new instance of DockerImage
+    pub fn new(
+        registry: String,
+        validator_type: ValidatorType,
+        image_name: String,
+        tag: String,
+    ) -> Self {
+        DockerImage {
+            registry,
+            validator_type,
+            image_name,
+            tag,
+        }
+    }
+
+    pub fn validator_type(&self) -> ValidatorType {
+        self.validator_type
+    }
+}
+
+// Put DockerImage in format for building, pushing, and pulling
+impl Display for DockerImage {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{}/{}-{}:{}",
+            self.registry, self.validator_type, self.image_name, self.tag
+        )
+    }
+}
+
 pub struct DockerConfig {
     pub base_image: String,
-    pub image_name: String,
-    pub tag: String,
-    pub registry: String,
     deploy_method: DeployMethod,
 }
 
 impl DockerConfig {
-    pub fn new(
-        base_image: String,
-        image_name: String,
-        tag: String,
-        registry: String,
-        deploy_method: DeployMethod,
-    ) -> Self {
+    pub fn new(base_image: String, deploy_method: DeployMethod) -> Self {
         DockerConfig {
             base_image,
-            image_name,
-            tag,
-            registry,
             deploy_method,
         }
     }
@@ -38,8 +66,9 @@ impl DockerConfig {
     pub fn build_image(
         &self,
         solana_root_path: &Path,
-        validator_type: &ValidatorType,
+        docker_image: &DockerImage,
     ) -> Result<(), Box<dyn Error>> {
+        let validator_type = docker_image.validator_type();
         match validator_type {
             ValidatorType::Bootstrap => (),
             ValidatorType::Standard | ValidatorType::RPC | ValidatorType::Client => {
@@ -49,33 +78,26 @@ impl DockerConfig {
                 .into());
             }
         }
-        let image_name = format!("{validator_type}-{}", self.image_name);
+
         let docker_path = solana_root_path.join(format!("docker-build/{validator_type}"));
-        match self.create_base_image(solana_root_path, image_name, &docker_path, validator_type) {
-            Ok(res) => {
-                if res.status.success() {
-                    info!("Successfully created base Image");
-                    Ok(())
-                } else {
-                    error!("Failed to build base image");
-                    Err(String::from_utf8_lossy(&res.stderr).into())
-                }
-            }
-            Err(err) => Err(err),
-        }
+        self.create_base_image(
+            solana_root_path,
+            docker_image,
+            &docker_path,
+            &validator_type,
+        )?;
+
+        Ok(())
     }
 
     fn create_base_image(
         &self,
         solana_root_path: &Path,
-        image_name: String,
+        docker_image: &DockerImage,
         docker_path: &PathBuf,
         validator_type: &ValidatorType,
-    ) -> Result<Output, Box<dyn Error>> {
+    ) -> Result<(), Box<dyn Error>> {
         self.create_dockerfile(validator_type, docker_path, None)?;
-
-        trace!("Tmp: {}", docker_path.as_path().display());
-        trace!("Exists: {}", docker_path.as_path().exists());
 
         // We use std::process::Command here because Docker-rs is very slow building dockerfiles
         // when they are in large repos. Docker-rs doesn't seem to support the `--file` flag natively.
@@ -86,10 +108,7 @@ impl DockerConfig {
         let progress_bar = new_spinner_progress_bar();
         progress_bar.set_message(format!("{BUILD}Building {validator_type} docker image...",));
 
-        let command = format!(
-            "docker build -t {}/{image_name}:{} -f {dockerfile:?} {context_path}",
-            self.registry, self.tag,
-        );
+        let command = format!("docker build -t {docker_image} -f {dockerfile:?} {context_path}");
 
         let output = match Command::new("sh")
             .arg("-c")
@@ -102,11 +121,15 @@ impl DockerConfig {
         {
             Ok(res) => Ok(res),
             Err(err) => Err(Box::new(err) as Box<dyn Error>),
-        };
+        }?;
+
+        if !output.status.success() {
+            return Err(output.status.to_string().into());
+        }
         progress_bar.finish_and_clear();
         info!("{validator_type} image build complete");
 
-        output
+        Ok(())
     }
 
     fn copy_file_to_docker(
@@ -185,6 +208,33 @@ WORKDIR /home/solana
             docker_path.join("Dockerfile"),
             content.unwrap_or(dockerfile.as_str()),
         )?;
+        Ok(())
+    }
+
+    pub fn push_image(docker_image: &DockerImage) -> Result<(), Box<dyn Error>> {
+        let progress_bar = new_spinner_progress_bar();
+        progress_bar.set_message(format!(
+            "{ROCKET}Pushing {} image to registry...",
+            docker_image.validator_type()
+        ));
+        let command = format!("docker push '{}'", docker_image);
+        let output = match Command::new("sh")
+            .arg("-c")
+            .arg(&command)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("Failed to execute command")
+            .wait_with_output()
+        {
+            Ok(res) => Ok(res),
+            Err(err) => Err(Box::new(err) as Box<dyn Error>),
+        }?;
+
+        if !output.status.success() {
+            return Err(output.status.to_string().into());
+        }
+        progress_bar.finish_and_clear();
         Ok(())
     }
 }

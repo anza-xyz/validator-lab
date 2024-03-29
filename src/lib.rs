@@ -61,6 +61,7 @@ pub mod release;
 
 static BUILD: Emoji = Emoji("👷 ", "");
 static PACKAGE: Emoji = Emoji("📦 ", "");
+static ROCKET: Emoji = Emoji("🚀 ", "");
 static SUN: Emoji = Emoji("🌞 ", "");
 static TRUCK: Emoji = Emoji("🚚 ", "");
 
