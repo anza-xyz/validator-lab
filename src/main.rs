@@ -4,7 +4,7 @@ use {
     std::fs,
     strum::VariantNames,
     validator_lab::{
-        docker::DockerConfig,
+        docker::{DockerConfig, DockerImage},
         genesis::{Genesis, GenesisFlags},
         kubernetes::Kubernetes,
         release::{BuildConfig, BuildType, DeployMethod},
@@ -312,19 +312,34 @@ async fn main() {
             .value_of("base_image")
             .unwrap_or_default()
             .to_string(),
+        deploy_method,
+    );
+
+    let validator_type = ValidatorType::Bootstrap;
+    let docker_image = DockerImage::new(
+        matches.value_of("registry_name").unwrap().to_string(),
+        validator_type,
         matches.value_of("image_name").unwrap().to_string(),
         matches
             .value_of("image_tag")
             .unwrap_or_default()
             .to_string(),
-        matches.value_of("registry_name").unwrap().to_string(),
-        deploy_method,
     );
 
     if build_config.docker_build() {
-        let image_type = ValidatorType::Bootstrap;
-        match docker.build_image(solana_root.get_root_path(), &image_type) {
-            Ok(_) => info!("{image_type} image built successfully"),
+        match docker.build_image(solana_root.get_root_path(), &docker_image) {
+            Ok(_) => info!("{} image built successfully", docker_image.validator_type()),
+            Err(err) => {
+                error!("Exiting........ {err}");
+                return;
+            }
+        }
+
+        match DockerConfig::push_image(&docker_image) {
+            Ok(_) => info!(
+                "{} image pushed successfully",
+                docker_image.validator_type()
+            ),
             Err(err) => {
                 error!("Error. Failed to build imge: {err}");
                 return;
