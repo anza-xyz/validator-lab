@@ -4,7 +4,7 @@ use {
     std::fs,
     validator_lab::{
         kubernetes::Kubernetes,
-        release::{BuildConfig, DeployMethod},
+        release::{BuildConfig, BuildType, DeployMethod},
         SolanaRoot,
     },
 };
@@ -27,14 +27,12 @@ fn parse_matches() -> clap::ArgMatches {
                 .help("Build validator from local Agave repo. Specify path here."),
         )
         .arg(
-            Arg::with_name("skip_build")
-                .long("skip-build")
-                .help("Disable building for building from local repo"),
-        )
-        .arg(
-            Arg::with_name("debug_build")
-                .long("debug-build")
-                .help("Enable debug build"),
+            Arg::new("build_type")
+                .long("build-type")
+                .takes_value(true)
+                .possible_values(&["skip", "debug", "release"])
+                .default_value("release")
+                .help("Specifies the build type: skip, debug, or release."),
         )
         .arg(
             Arg::with_name("release_channel")
@@ -75,6 +73,10 @@ async fn main() {
         DeployMethod::ReleaseChannel(_) | DeployMethod::Skip => SolanaRoot::default(),
     };
 
+    let build_type: BuildType = matches
+        .value_of_t("build_type")
+        .unwrap_or_else(|e| e.exit());
+
     if let Ok(metadata) = fs::metadata(solana_root.get_root_path()) {
         if !metadata.is_dir() {
             return error!(
@@ -105,15 +107,10 @@ async fn main() {
         }
     }
 
-    let build_config = BuildConfig::new(
-        deploy_method,
-        matches.is_present("skip_build"),
-        matches.is_present("debug_build"),
-        &solana_root.get_root_path(),
-    )
-    .unwrap_or_else(|err| {
-        panic!("Error creating BuildConfig: {}", err);
-    });
+    let build_config = BuildConfig::new(deploy_method, build_type, &solana_root.get_root_path())
+        .unwrap_or_else(|err| {
+            panic!("Error creating BuildConfig: {}", err);
+        });
 
     match build_config.prepare().await {
         Ok(_) => info!("Validator setup prepared successfully"),

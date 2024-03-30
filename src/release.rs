@@ -2,7 +2,7 @@ use {
     crate::{cat_file, download_to_temp, extract_release_archive},
     git2::Repository,
     log::*,
-    std::{error::Error, fs, path::PathBuf, time::Instant},
+    std::{error::Error, fs, path::PathBuf, str::FromStr, time::Instant},
 };
 
 #[derive(Debug, Clone)]
@@ -12,10 +12,29 @@ pub enum DeployMethod {
     Skip,
 }
 
+#[derive(PartialEq)]
+pub enum BuildType {
+    Skip,
+    Debug,
+    Release,
+}
+
+impl FromStr for BuildType {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "skip" => Ok(BuildType::Skip),
+            "debug" => Ok(BuildType::Debug),
+            "release" => Ok(BuildType::Release),
+            _ => Err("invalid string"),
+        }
+    }
+}
+
 pub struct BuildConfig {
     deploy_method: DeployMethod,
-    skip_build: bool,
-    debug_build: bool,
+    build_type: BuildType,
     _build_path: PathBuf,
     solana_root_path: PathBuf,
 }
@@ -23,8 +42,7 @@ pub struct BuildConfig {
 impl BuildConfig {
     pub fn new(
         deploy_method: DeployMethod,
-        skip_build: bool,
-        debug_build: bool,
+        build_type: BuildType,
         solana_root_path: &PathBuf,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let build_path = match deploy_method {
@@ -35,8 +53,7 @@ impl BuildConfig {
 
         Ok(BuildConfig {
             deploy_method,
-            skip_build,
-            debug_build,
+            build_type,
             _build_path: build_path,
             solana_root_path: solana_root_path.clone(),
         })
@@ -66,7 +83,8 @@ impl BuildConfig {
         let file_name = "solana-release";
         let tar_filename = format!("{file_name}.tar.bz2");
         info!("tar file: {}", tar_filename);
-        self.download_release_from_channel(&tar_filename, release_channel).await?;
+        self.download_release_from_channel(&tar_filename, release_channel)
+            .await?;
 
         // Extract it and load the release version metadata
         let tarball_filename = self.solana_root_path.join(&tar_filename);
@@ -79,17 +97,21 @@ impl BuildConfig {
     }
 
     fn setup_local_deploy(&self) -> Result<(), Box<dyn Error>> {
-        if !self.skip_build {
+        if self.build_type != BuildType::Skip {
             self.build()?;
         } else {
-            info!("Build skipped due to --skip-build");
+            info!("Build skipped due to --build-type skip");
         }
         Ok(())
     }
 
     fn build(&self) -> Result<(), Box<dyn Error>> {
         let start_time = Instant::now();
-        let build_variant = if self.debug_build { "--debug" } else { "" };
+        let build_variant = if self.build_type == BuildType::Debug {
+            "--debug"
+        } else {
+            ""
+        };
 
         let install_directory = self.solana_root_path.join("farf");
         let install_script = self.solana_root_path.join("scripts/cargo-install-all.sh");
