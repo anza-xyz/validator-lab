@@ -6,7 +6,6 @@ use {
     reqwest::Client,
     std::{
         env,
-        error::Error,
         fs::File,
         io::{BufReader, Cursor, Read},
         path::{Path, PathBuf},
@@ -15,13 +14,6 @@ use {
     tar::Archive,
     url::Url,
 };
-
-#[macro_export]
-macro_rules! boxed_error {
-    ($message:expr) => {
-        Box::new(std::io::Error::new(std::io::ErrorKind::Other, $message)) as Box<dyn Error + Send>
-    };
-}
 
 pub fn get_solana_root() -> PathBuf {
     PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("$CARGO_MANIFEST_DIR")).to_path_buf()
@@ -93,11 +85,12 @@ pub async fn download_to_temp(
 
     let response = client.get(url.clone()).send().await?;
     if !response.status().is_success() {
-        return Err(boxed_error!(format!(
+        return Err(format!(
             "Failed to download release from url: {:?}, response body: {:?}",
             url.to_string(),
             response.text().await?
-        )));
+        )
+        .into());
     }
 
     let file_name: PathBuf = solana_root_path.join(file_name);

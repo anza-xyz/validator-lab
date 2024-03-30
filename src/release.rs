@@ -1,5 +1,5 @@
 use {
-    crate::{boxed_error, cat_file, download_to_temp, extract_release_archive},
+    crate::{cat_file, download_to_temp, extract_release_archive},
     git2::Repository,
     log::*,
     std::{error::Error, fmt::Display, fs, path::PathBuf, str::FromStr, time::Instant},
@@ -98,7 +98,7 @@ impl BuildConfig {
                 self.setup_local_deploy()?;
             }
             DeployMethod::Skip => {
-                return Err(boxed_error!("Skip deploy method not implemented yet."));
+                return Err("Skip deploy method not implemented yet.".into());
             }
         }
         info!("Completed Prepare Deploy");
@@ -146,7 +146,7 @@ impl BuildConfig {
                 if result.success() {
                     info!("Successfully built validator")
                 } else {
-                    return Err(boxed_error!("Failed to build validator"));
+                    return Err("Failed to build validator".into());
                 }
             }
             Err(err) => return Err(Box::new(err)),
@@ -191,10 +191,7 @@ impl BuildConfig {
         // Remove file
         if let Err(err) = fs::remove_file(&file_path) {
             if err.kind() != std::io::ErrorKind::NotFound {
-                return Err(boxed_error!(format!(
-                    "{}: {:?}",
-                    "Error while removing file:", err
-                )));
+                return Err(format!("{}: {:?}", "Error while removing file:", err).into());
             }
         }
 
