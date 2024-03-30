@@ -1,5 +1,5 @@
 use {
-    clap::{crate_description, crate_name, App, Arg, ArgMatches},
+    clap::{command, Arg},
     log::*,
     std::fs,
     validator_lab::{
@@ -9,13 +9,12 @@ use {
     },
 };
 
-fn parse_matches() -> ArgMatches<'static> {
-    App::new(crate_name!())
-        .about(crate_description!())
+fn parse_matches() -> clap::ArgMatches {
+    command!()
         .arg(
-            Arg::with_name("cluster_namespace")
+            Arg::new("cluster_namespace")
                 .long("namespace")
-                .short("n")
+                .short('n')
                 .takes_value(true)
                 .default_value("default")
                 .help("namespace to deploy test cluster"),
@@ -29,11 +28,11 @@ fn parse_matches() -> ArgMatches<'static> {
                 .help("Deploy method. tar, local, skip. [default: local]"),
         )
         .arg(
-            Arg::with_name("local-path")
+            Arg::new("local_path")
                 .long("local-path")
                 .takes_value(true)
-                .required_if("deploy-method", "local")
-                .conflicts_with_all(&["tar", "skip"])
+                .required_if("deploy_method", "local")
+                .conflicts_with("release_channel")
                 .help("Path to local agave repo. Required for 'local' deploy method."),
         )
         .arg(
@@ -50,7 +49,7 @@ fn parse_matches() -> ArgMatches<'static> {
             Arg::with_name("release_channel")
                 .long("release-channel")
                 .takes_value(true)
-                .required_if("deploy_method", "tar") // Require if deploy_method is "tar"
+                .conflicts_with("local_path")
                 .help("release version. e.g. v1.17.2. Required if '--deploy-method tar'"),
         )
         .get_matches()
@@ -73,7 +72,7 @@ async fn main() {
     };
 
     let deploy_method = matches.value_of("deploy_method").unwrap();
-    let local_path = matches.value_of("local-path");
+    let local_path = matches.value_of("local_path");
     match deploy_method {
         method if method == DeployMethod::Local.to_string() => {
             if local_path.is_none() {
@@ -87,7 +86,7 @@ async fn main() {
         }
     }
 
-    let solana_root = match matches.value_of("local-path") {
+    let solana_root = match matches.value_of("local_path") {
         Some(path) => SolanaRoot::new_from_path(path.into()),
         None => SolanaRoot::default(),
     };

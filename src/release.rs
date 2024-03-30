@@ -12,6 +12,19 @@ pub enum DeployMethod {
     Skip,
 }
 
+// #[derive(Debug)]
+// enum DeployMethod2 {
+//     Local(String),
+//     ReleaseChannel(String),
+//     Skip,
+// }
+
+// enum Build {
+//     Skip,
+//     Debug,
+//     Release,
+// }
+
 impl Display for DeployMethod {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -74,16 +87,13 @@ impl BuildConfig {
 
     pub async fn prepare(&self) -> Result<(), Box<dyn Error>> {
         match self.deploy_method {
-            DeployMethod::Tar => {
-                let file_name = "solana-release";
-                match self.setup_tar_deploy(file_name).await {
-                    Ok(tar_directory) => {
-                        info!("Sucessfuly setup tar file");
-                        cat_file(&tar_directory.join("version.yml")).unwrap();
-                    }
-                    Err(err) => return Err(err),
+            DeployMethod::Tar => match self.setup_tar_deploy().await {
+                Ok(tar_directory) => {
+                    info!("Successfully setup tar file");
+                    cat_file(&tar_directory.join("version.yml")).unwrap();
                 }
-            }
+                Err(err) => return Err(err),
+            },
             DeployMethod::Local => {
                 self.setup_local_deploy()?;
             }
@@ -95,21 +105,20 @@ impl BuildConfig {
         Ok(())
     }
 
-    async fn setup_tar_deploy(&self, file_name: &str) -> Result<PathBuf, Box<dyn Error>> {
-        let tar_file = format!("{}{}", file_name, ".tar.bz2");
-        info!("tar file: {}", tar_file);
-        self.download_release_from_channel(file_name).await?;
+    async fn setup_tar_deploy(&self) -> Result<PathBuf, Box<dyn Error>> {
+        let file_name = "solana-release";
+        let tar_filename = format!("{file_name}.tar.bz2");
+        info!("tar file: {}", tar_filename);
+        self.download_release_from_channel(&tar_filename).await?;
 
         // Extract it and load the release version metadata
-        let tarball_filename = self.solana_root_path.join(tar_file);
-        let temp_release_dir = self.solana_root_path.join(file_name);
-        extract_release_archive(&tarball_filename, &temp_release_dir, file_name).map_err(
-            |err| {
-                format!("Unable to extract {tarball_filename:?} into {temp_release_dir:?}: {err}")
-            },
-        )?;
+        let tarball_filename = self.solana_root_path.join(&tar_filename);
+        let release_dir = self.solana_root_path.join(file_name);
+        extract_release_archive(&tarball_filename, &self.solana_root_path).map_err(|err| {
+            format!("Unable to extract {tar_filename} into {release_dir:?}: {err}")
+        })?;
 
-        Ok(temp_release_dir)
+        Ok(release_dir)
     }
 
     fn setup_local_deploy(&self) -> Result<(), Box<dyn Error>> {
@@ -173,10 +182,12 @@ impl BuildConfig {
         Ok(())
     }
 
-    async fn download_release_from_channel(&self, file_name: &str) -> Result<(), Box<dyn Error>> {
+    async fn download_release_from_channel(
+        &self,
+        tar_filename: &str,
+    ) -> Result<(), Box<dyn Error>> {
         info!("Downloading release from channel: {}", self.release_channel);
-        let tar_file = format!("{}{}", file_name, ".tar.bz2");
-        let file_path = self.solana_root_path.join(tar_file.as_str());
+        let file_path = self.solana_root_path.join(tar_filename);
         // Remove file
         if let Err(err) = fs::remove_file(&file_path) {
             if err.kind() != std::io::ErrorKind::NotFound {
@@ -197,7 +208,7 @@ impl BuildConfig {
 
         download_to_temp(
             download_url.as_str(),
-            tar_file.as_str(),
+            tar_filename,
             self.solana_root_path.clone(),
         )
         .await

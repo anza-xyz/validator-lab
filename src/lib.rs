@@ -7,7 +7,7 @@ use {
     std::{
         env,
         error::Error,
-        fs::{self, File},
+        fs::File,
         io::{BufReader, Cursor, Read},
         path::{Path, PathBuf},
         time::Duration,
@@ -71,7 +71,7 @@ pub fn cat_file(path: &PathBuf) -> std::io::Result<()> {
     let mut file = File::open(path)?;
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
-    info!("version.yml:\n{}", contents);
+    info!("{:?}:\n{}", path.file_name(), contents);
 
     Ok(())
 }
@@ -110,39 +110,20 @@ pub async fn download_to_temp(
 }
 
 pub fn extract_release_archive(
-    archive: &Path,
+    tarball_filename: &Path,
     extract_dir: &Path,
-    file_name: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let progress_bar = new_spinner_progress_bar();
     progress_bar.set_message(format!("{PACKAGE}Extracting..."));
 
-    if extract_dir.exists() {
-        fs::remove_dir_all(extract_dir)?;
-    }
-    fs::create_dir_all(extract_dir)?;
+    let tarball_file = File::open(tarball_filename)?;
+    let decompressed = BzDecoder::new(BufReader::new(tarball_file));
+    let mut archive = Archive::new(decompressed);
 
-    let tmp_extract_dir = extract_dir.with_file_name("tmp-extract");
+    // Unpack the archive into extract_dir
+    archive.unpack(extract_dir)?;
 
-    if tmp_extract_dir.exists() {
-        let _ = fs::remove_dir_all(&tmp_extract_dir);
-    }
-    fs::create_dir_all(&tmp_extract_dir)?;
-
-    let tar_bz2 = File::open(archive)?;
-    let tar = BzDecoder::new(BufReader::new(tar_bz2));
-    let mut release = Archive::new(tar);
-    release.unpack(&tmp_extract_dir)?;
-
-    for entry in tmp_extract_dir.join(file_name).read_dir()? {
-        let entry = entry?;
-        let entry_path = entry.path();
-        let target_entry_path = extract_dir.join(entry_path.file_name().unwrap());
-        fs::rename(entry_path, target_entry_path)?;
-    }
-
-    // Remove the tmp-extract directory
-    fs::remove_dir_all(tmp_extract_dir)?;
     progress_bar.finish_and_clear();
+
     Ok(())
 }
