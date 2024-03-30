@@ -20,20 +20,11 @@ fn parse_matches() -> clap::ArgMatches {
                 .help("namespace to deploy test cluster"),
         )
         .arg(
-            Arg::with_name("deploy_method")
-                .long("deploy-method")
-                .takes_value(true)
-                .possible_values(&["local", "tar", "skip"])
-                .default_value("local")
-                .help("Deploy method. tar, local, skip. [default: local]"),
-        )
-        .arg(
             Arg::new("local_path")
                 .long("local-path")
                 .takes_value(true)
-                .required_if("deploy_method", "local")
                 .conflicts_with("release_channel")
-                .help("Path to local agave repo. Required for 'local' deploy method."),
+                .help("Build validator from local Agave repo. Specify path here."),
         )
         .arg(
             Arg::with_name("skip_build")
@@ -50,7 +41,7 @@ fn parse_matches() -> clap::ArgMatches {
                 .long("release-channel")
                 .takes_value(true)
                 .conflicts_with("local_path")
-                .help("release version. e.g. v1.17.2. Required if '--deploy-method tar'"),
+                .help("Pulls specific release version. e.g. v1.17.2"),
         )
         .get_matches()
 }
@@ -71,24 +62,17 @@ async fn main() {
         namespace: matches.value_of("cluster_namespace").unwrap_or_default(),
     };
 
-    let deploy_method = matches.value_of("deploy_method").unwrap();
-    let local_path = matches.value_of("local_path");
-    match deploy_method {
-        method if method == DeployMethod::Local.to_string() => {
-            if local_path.is_none() {
-                panic!("Error: --local-path is required for 'local' deploy-method.");
-            }
-        }
-        _ => {
-            if local_path.is_some() {
-                warn!("WARN: --local-path <path> will be ignored");
-            }
-        }
-    }
+    let deploy_method = if let Some(local_path) = matches.value_of("local_path") {
+        DeployMethod::Local(local_path.to_owned())
+    } else if let Some(release_channel) = matches.value_of("release_channel") {
+        DeployMethod::ReleaseChannel(release_channel.to_owned())
+    } else {
+        DeployMethod::Skip
+    };
 
-    let solana_root = match matches.value_of("local_path") {
-        Some(path) => SolanaRoot::new_from_path(path.into()),
-        None => SolanaRoot::default(),
+    let solana_root = match &deploy_method {
+        DeployMethod::Local(path) => SolanaRoot::new_from_path(path.into()),
+        DeployMethod::ReleaseChannel(_) | DeployMethod::Skip => SolanaRoot::default(),
     };
 
     if let Ok(metadata) = fs::metadata(solana_root.get_root_path()) {
@@ -126,10 +110,6 @@ async fn main() {
         matches.is_present("skip_build"),
         matches.is_present("debug_build"),
         &solana_root.get_root_path(),
-        matches
-            .value_of("release_channel")
-            .unwrap_or_default()
-            .to_string(),
     )
     .unwrap_or_else(|err| {
         panic!("Error creating BuildConfig: {}", err);

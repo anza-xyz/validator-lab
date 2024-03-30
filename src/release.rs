@@ -2,50 +2,14 @@ use {
     crate::{cat_file, download_to_temp, extract_release_archive},
     git2::Repository,
     log::*,
-    std::{error::Error, fmt::Display, fs, path::PathBuf, str::FromStr, time::Instant},
+    std::{error::Error, fs, path::PathBuf, time::Instant},
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum DeployMethod {
-    Local,
-    Tar,
+    Local(String),
+    ReleaseChannel(String),
     Skip,
-}
-
-// #[derive(Debug)]
-// enum DeployMethod2 {
-//     Local(String),
-//     ReleaseChannel(String),
-//     Skip,
-// }
-
-// enum Build {
-//     Skip,
-//     Debug,
-//     Release,
-// }
-
-impl Display for DeployMethod {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            DeployMethod::Local => write!(f, "local"),
-            DeployMethod::Tar => write!(f, "tar"),
-            DeployMethod::Skip => write!(f, "skip"),
-        }
-    }
-}
-
-impl FromStr for DeployMethod {
-    type Err = ();
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "local" => Ok(DeployMethod::Local),
-            "tar" => Ok(DeployMethod::Tar),
-            "skip" => Ok(DeployMethod::Skip),
-            _ => Err(()),
-        }
-    }
 }
 
 pub struct BuildConfig {
@@ -54,24 +18,18 @@ pub struct BuildConfig {
     debug_build: bool,
     _build_path: PathBuf,
     solana_root_path: PathBuf,
-    release_channel: String,
 }
 
 impl BuildConfig {
     pub fn new(
-        deploy_method: &str,
+        deploy_method: DeployMethod,
         skip_build: bool,
         debug_build: bool,
         solana_root_path: &PathBuf,
-        release_channel: String,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let deploy_method = deploy_method
-            .parse::<DeployMethod>()
-            .map_err(|_| "Failed to parse deploy_method".to_string())?;
-
         let build_path = match deploy_method {
-            DeployMethod::Local => solana_root_path.join("farf/bin"),
-            DeployMethod::Tar => solana_root_path.join("solana-release/bin"),
+            DeployMethod::Local(_) => solana_root_path.join("farf/bin"),
+            DeployMethod::ReleaseChannel(_) => solana_root_path.join("solana-release/bin"),
             DeployMethod::Skip => solana_root_path.join("farf/bin"),
         };
 
@@ -81,20 +39,19 @@ impl BuildConfig {
             debug_build,
             _build_path: build_path,
             solana_root_path: solana_root_path.clone(),
-            release_channel,
         })
     }
 
     pub async fn prepare(&self) -> Result<(), Box<dyn Error>> {
-        match self.deploy_method {
-            DeployMethod::Tar => match self.setup_tar_deploy().await {
+        match &self.deploy_method {
+            DeployMethod::ReleaseChannel(channel) => match self.setup_tar_deploy(channel).await {
                 Ok(tar_directory) => {
                     info!("Successfully setup tar file");
                     cat_file(&tar_directory.join("version.yml")).unwrap();
                 }
                 Err(err) => return Err(err),
             },
-            DeployMethod::Local => {
+            DeployMethod::Local(_) => {
                 self.setup_local_deploy()?;
             }
             DeployMethod::Skip => {
@@ -105,11 +62,11 @@ impl BuildConfig {
         Ok(())
     }
 
-    async fn setup_tar_deploy(&self) -> Result<PathBuf, Box<dyn Error>> {
+    async fn setup_tar_deploy(&self, release_channel: &String) -> Result<PathBuf, Box<dyn Error>> {
         let file_name = "solana-release";
         let tar_filename = format!("{file_name}.tar.bz2");
         info!("tar file: {}", tar_filename);
-        self.download_release_from_channel(&tar_filename).await?;
+        self.download_release_from_channel(&tar_filename, release_channel).await?;
 
         // Extract it and load the release version metadata
         let tarball_filename = self.solana_root_path.join(&tar_filename);
@@ -185,8 +142,9 @@ impl BuildConfig {
     async fn download_release_from_channel(
         &self,
         tar_filename: &str,
+        release_channel: &String,
     ) -> Result<(), Box<dyn Error>> {
-        info!("Downloading release from channel: {}", self.release_channel);
+        info!("Downloading release from channel: {}", release_channel);
         let file_path = self.solana_root_path.join(tar_filename);
         // Remove file
         if let Err(err) = fs::remove_file(&file_path) {
@@ -198,7 +156,7 @@ impl BuildConfig {
         let download_url = format!(
             "{}{}{}",
             "https://release.solana.com/",
-            self.release_channel,
+            release_channel,
             "/solana-release-x86_64-unknown-linux-gnu.tar.bz2"
         );
         info!("download_url: {}", download_url);
