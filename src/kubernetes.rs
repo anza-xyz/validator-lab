@@ -1,5 +1,8 @@
 use {
-    crate::k8s_helpers::{self, SecretType, ValidatorType},
+    crate::{
+        k8s_helpers::{self, SecretType},
+        ValidatorType, validator_config::ValidatorConfig,
+    },
     k8s_openapi::api::{
         apps::v1::ReplicaSet,
         core::v1::{
@@ -19,16 +22,18 @@ use {
     log::*,
 };
 
-pub struct Kubernetes {
+pub struct Kubernetes<'a> {
     k8s_client: Client,
     namespace: String,
+    validator_config: &'a mut ValidatorConfig,
 }
 
-impl Kubernetes {
-    pub async fn new(namespace: &str) -> Kubernetes {
+impl<'a> Kubernetes<'a> {
+    pub async fn new(namespace: &str, validator_config: &'a mut ValidatorConfig) -> Kubernetes<'a> {
         Self {
             k8s_client: Client::try_default().await.unwrap(),
             namespace: namespace.to_owned(),
+            validator_config,
         }
     }
 

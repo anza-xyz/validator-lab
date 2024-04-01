@@ -93,6 +93,7 @@ pub mod library;
 pub mod release;
 pub mod startup_scripts;
 pub mod validator;
+pub mod validator_config;
 
 static BUILD: Emoji = Emoji("👷 ", "");
 static PACKAGE: Emoji = Emoji("📦 ", "");

@@ -21,6 +21,7 @@ rayon = "1.9.0"
 reqwest = { version = "0.11.23", features = ["blocking", "brotli", "deflate", "gzip", "rustls-tls", "json"] }
 rustls = { version = "0.21.11", default-features = false, features = ["quic"] }
 solana-core = "1.18.8"
+solana-ledger = "1.18.8"
 solana-logger = "1.18.8"
 solana-sdk = "1.18.8"
 strum = "0.26.2"

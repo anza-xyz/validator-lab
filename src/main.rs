@@ -1,6 +1,7 @@
 use {
     clap::{command, Arg, ArgGroup},
     log::*,
+    solana_ledger::blockstore_cleanup_service::{DEFAULT_MAX_LEDGER_SHREDS, DEFAULT_MIN_MAX_LEDGER_SHREDS},
     solana_sdk::{signature::keypair::read_keypair_file, signer::Signer},
     std::{fs, path::PathBuf},
     strum::VariantNames,
@@ -8,13 +9,15 @@ use {
         docker::{DockerConfig, DockerImage},
         genesis::{
             Genesis, GenesisFlags, DEFAULT_BOOTSTRAP_NODE_SOL, DEFAULT_BOOTSTRAP_NODE_STAKE_SOL,
-            DEFAULT_FAUCET_LAMPORTS, DEFAULT_MAX_GENESIS_ARCHIVE_UNPACKED_SIZE,
+            DEFAULT_FAUCET_LAMPORTS, DEFAULT_MAX_GENESIS_ARCHIVE_UNPACKED_SIZE, DEFAULT_INTERNAL_NODE_SOL, DEFAULT_INTERNAL_NODE_STAKE_SOL,
         },
         kubernetes::Kubernetes,
         library::Library,
         release::{BuildConfig, BuildType, DeployMethod},
         validator::{LabelType, Validator},
-        EnvironmentConfig, SolanaRoot, ValidatorType,
+        EnvironmentConfig,
+        SolanaRoot, ValidatorType,
+        validator_config::ValidatorConfig,
     },
 };
 
@@ -160,6 +163,53 @@ fn parse_matches() -> clap::ArgMatches {
                 .default_value("latest")
                 .help("Docker image tag."),
         )
+        // Bootstrap/Validator Config
+        .arg(
+            Arg::with_name("tpu_enable_udp")
+                .long("tpu-enable-udp")
+                .help("Validator config. Enable UDP for tpu transactions."),
+        )
+        .arg(
+            Arg::with_name("tpu_disable_quic")
+                .long("tpu-disable-quic")
+                .help("Validator config. Disable quic for tpu packet forwarding"),
+        )
+        .arg(
+            Arg::with_name("limit_ledger_size")
+                .long("limit-ledger-size")
+                .takes_value(true)
+                .help("Validator Config. The `--limit-ledger-size` parameter allows you to specify how many ledger
+                shreds your node retains on disk. If you do not
+                include this parameter, the validator will keep the entire ledger until it runs
+                out of disk space. The default value attempts to keep the ledger disk usage
+                under 500GB. More or less disk usage may be requested by adding an argument to
+                `--limit-ledger-size` if desired. Check `agave-validator --help` for the
+                default limit value used by `--limit-ledger-size`. More information about
+                selecting a custom limit value is at : https://github.com/solana-labs/solana/blob/583cec922b6107e0f85c7e14cb5e642bc7dfb340/core/src/ledger_cleanup_service.rs#L15-L26"),
+        )
+        .arg(
+            Arg::with_name("skip_poh_verify")
+                .long("skip-poh-verify")
+                .help("Validator config. If set, validators will skip verifying
+                the ledger they already have saved to disk at
+                boot (results in a much faster boot)"),
+        )
+        .arg(
+            Arg::with_name("no_snapshot_fetch")
+                .long("no-snapshot-fetch")
+                .help("Validator config. If set, disables booting validators from a snapshot"),
+        )
+        .arg(
+            Arg::with_name("require_tower")
+                .long("require-tower")
+                .help("Validator config. Refuse to start if saved tower state is not found.
+                Off by default since validator won't restart if the pod restarts"),
+        )
+        .arg(
+            Arg::with_name("full_rpc")
+                .long("full-rpc")
+                .help("Validator config. Support full RPC services on all nodes"),
+        )
         .get_matches()
 }
 
@@ -212,22 +262,6 @@ async fn main() {
             "Build directory not found: {}",
             solana_root.get_root_path().display()
         );
-    }
-
-    let kub_controller = Kubernetes::new(environment_config.namespace).await;
-    match kub_controller.namespace_exists().await {
-        Ok(true) => (),
-        Ok(false) => {
-            error!(
-                "Namespace: '{}' doesn't exist. Exiting...",
-                environment_config.namespace
-            );
-            return;
-        }
-        Err(err) => {
-            error!("Error: {err}");
-            return;
-        }
     }
 
     let build_config = BuildConfig::new(
@@ -286,6 +320,50 @@ async fn main() {
             },
         ),
     };
+
+    let mut validator_config = ValidatorConfig {
+        tpu_enable_udp: matches.is_present("tpu_enable_udp"),
+        tpu_disable_quic: matches.is_present("tpu_disable_quic"),
+        shred_version: None, // set after genesis created
+        bank_hash: None,     // set after genesis created
+        max_ledger_size: if matches.is_present("limit_ledger_size") {
+            let limit_ledger_size = match matches.value_of("limit_ledger_size") {
+                Some(_) => value_t_or_exit!(matches, "limit_ledger_size", u64),
+                None => DEFAULT_MAX_LEDGER_SHREDS,
+            };
+            if limit_ledger_size < DEFAULT_MIN_MAX_LEDGER_SHREDS {
+                error!(
+                    "The provided --limit-ledger-size value was too small, the minimum value is {DEFAULT_MIN_MAX_LEDGER_SHREDS}"
+                );
+                return;
+            }
+            Some(limit_ledger_size)
+        } else {
+            None
+        },
+        skip_poh_verify: matches.is_present("skip_poh_verify"),
+        no_snapshot_fetch: matches.is_present("no_snapshot_fetch"),
+        require_tower: matches.is_present("require_tower"),
+        enable_full_rpc: matches.is_present("enable_full_rpc"),
+        entrypoints: Vec::new(),
+        known_validators: None,
+    };
+
+    let kub_controller = Kubernetes::new(environment_config.namespace, &mut validator_config).await;
+    match kub_controller.namespace_exists().await {
+        Ok(true) => (),
+        Ok(false) => {
+            error!(
+                "Namespace: '{}' doesn't exist. Exiting...",
+                environment_config.namespace
+            );
+            return;
+        }
+        Err(err) => {
+            error!("Error: {}", err);
+            return;
+        }
+    }
 
     match build_config.prepare().await {
         Ok(_) => info!("Validator setup prepared successfully"),
