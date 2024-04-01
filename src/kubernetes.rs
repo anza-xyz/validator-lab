@@ -1,10 +1,17 @@
 use {
-    crate::k8s_helpers,
-    k8s_openapi::api::core::v1::{Namespace, Secret},
+    crate::{k8s_helpers, ValidatorType},
+    k8s_openapi::api::{
+        apps::v1::ReplicaSet,
+        core::v1::{
+            EnvVar, EnvVarSource, Namespace, ObjectFieldSelector,
+            Secret, SecretVolumeSource, Volume, VolumeMount,
+        },
+    },
     kube::{
         api::{Api, ListParams, PostParams},
         Client,
     },
+    log::*,
     std::{collections::BTreeMap, error::Error, path::PathBuf},
 };
 
@@ -57,6 +64,64 @@ impl Kubernetes {
         let secrets_api: Api<Secret> =
             Api::namespaced(self.k8s_client.clone(), self.namespace.as_str());
         secrets_api.create(&PostParams::default(), secret).await
+    }
+
+    pub fn create_bootstrap_validator_replica_set(
+        &mut self,
+        container_name: &str,
+        image_name: &str,
+        secret_name: Option<String>,
+        label_selector: &BTreeMap<String, String>,
+    ) -> Result<ReplicaSet, Box<dyn Error>> {
+        let mut env_vars = vec![EnvVar {
+            name: "MY_POD_IP".to_string(),
+            value_from: Some(EnvVarSource {
+                field_ref: Some(ObjectFieldSelector {
+                    field_path: "status.podIP".to_string(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }];
+
+
+        let accounts_volume = Some(vec![Volume {
+            name: "bootstrap-accounts-volume".into(),
+            secret: Some(SecretVolumeSource {
+                secret_name,
+                ..Default::default()
+            }),
+            ..Default::default()
+        }]);
+
+        let accounts_volume_mount = Some(vec![VolumeMount {
+            name: "bootstrap-accounts-volume".to_string(),
+            mount_path: "/home/solana/bootstrap-accounts".to_string(),
+            ..Default::default()
+        }]);
+
+        let mut command =
+            vec!["/home/solana/k8s-cluster-scripts/bootstrap-startup-script.sh".to_string()];
+        command.extend(self.generate_bootstrap_command_flags());
+
+        for c in command.iter() {
+            debug!("bootstrap command: {}", c);
+        }
+
+        k8s_helpers::create_replica_set(
+            &ValidatorType::Bootstrap,
+            self.namespace.as_str(),
+            label_selector,
+            container_name,
+            image_name,
+            env_vars,
+            &command,
+            accounts_volume,
+            accounts_volume_mount,
+            None,
+            self.pod_requests.requests.clone(),
+        )
     }
 
     pub fn create_selector(&self, key: &str, value: &str) -> BTreeMap<String, String> {
