@@ -1,12 +1,11 @@
 use {
-    crate::ValidatorType,
+    crate::{docker::DockerImage, ValidatorType},
     k8s_openapi::{
         api::{
             apps::v1::{ReplicaSet, ReplicaSetSpec},
             core::v1::{
-                Container, EnvVar, PodSecurityContext,
-                PodSpec, PodTemplateSpec, Probe, ResourceRequirements, Secret,
-                Volume, VolumeMount,
+                Container, EnvVar, PodSecurityContext, PodSpec, PodTemplateSpec, Probe,
+                ResourceRequirements, Secret, Volume, VolumeMount,
             },
         },
         apimachinery::pkg::{api::resource::Quantity, apis::meta::v1::LabelSelector},
@@ -67,14 +66,13 @@ pub fn create_replica_set(
     name: &ValidatorType,
     namespace: &str,
     label_selector: &BTreeMap<String, String>,
-    container_name: &str,
-    image_name: &str,
+    image_name: &DockerImage,
     environment_variables: Vec<EnvVar>,
     command: &[String],
     volumes: Option<Vec<Volume>>,
     volume_mounts: Option<Vec<VolumeMount>>,
-    readiness_probe: Option<Probe>,
     pod_requests: BTreeMap<String, Quantity>,
+    readiness_probe: Option<Probe>,
 ) -> Result<ReplicaSet, Box<dyn Error>> {
     let pod_spec = PodTemplateSpec {
         metadata: Some(ObjectMeta {
@@ -83,7 +81,7 @@ pub fn create_replica_set(
         }),
         spec: Some(PodSpec {
             containers: vec![Container {
-                name: container_name.to_string(),
+                name: format!("{}-{}", image_name.validator_type(), "container"),
                 image: Some(image_name.to_string()),
                 image_pull_policy: Some("Always".to_string()),
                 env: Some(environment_variables),

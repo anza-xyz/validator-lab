@@ -1,7 +1,9 @@
 use {
-    clap::{command, Arg, ArgGroup},
+    clap::{command, value_t_or_exit, Arg, ArgGroup},
     log::*,
-    solana_ledger::blockstore_cleanup_service::{DEFAULT_MAX_LEDGER_SHREDS, DEFAULT_MIN_MAX_LEDGER_SHREDS},
+    solana_ledger::blockstore_cleanup_service::{
+        DEFAULT_MAX_LEDGER_SHREDS, DEFAULT_MIN_MAX_LEDGER_SHREDS,
+    },
     solana_sdk::{signature::keypair::read_keypair_file, signer::Signer},
     std::{fs, path::PathBuf},
     strum::VariantNames,
@@ -9,15 +11,14 @@ use {
         docker::{DockerConfig, DockerImage},
         genesis::{
             Genesis, GenesisFlags, DEFAULT_BOOTSTRAP_NODE_SOL, DEFAULT_BOOTSTRAP_NODE_STAKE_SOL,
-            DEFAULT_FAUCET_LAMPORTS, DEFAULT_MAX_GENESIS_ARCHIVE_UNPACKED_SIZE, DEFAULT_INTERNAL_NODE_SOL, DEFAULT_INTERNAL_NODE_STAKE_SOL,
+            DEFAULT_FAUCET_LAMPORTS, DEFAULT_MAX_GENESIS_ARCHIVE_UNPACKED_SIZE,
         },
-        library::Library,
         kubernetes::{Kubernetes, PodRequests},
+        library::Library,
         release::{BuildConfig, BuildType, DeployMethod},
         validator::{LabelType, Validator},
-        EnvironmentConfig,
-        SolanaRoot, ValidatorType,
         validator_config::ValidatorConfig,
+        EnvironmentConfig, SolanaRoot, ValidatorType,
     },
 };
 
@@ -206,7 +207,7 @@ fn parse_matches() -> clap::ArgMatches {
                 Off by default since validator won't restart if the pod restarts"),
         )
         .arg(
-            Arg::with_name("full_rpc")
+            Arg::with_name("enable_full_rpc")
                 .long("full-rpc")
                 .help("Validator config. Support full RPC services on all nodes"),
         )
@@ -343,8 +344,6 @@ async fn main() {
     let mut validator_config = ValidatorConfig {
         tpu_enable_udp: matches.is_present("tpu_enable_udp"),
         tpu_disable_quic: matches.is_present("tpu_disable_quic"),
-        shred_version: None, // set after genesis created
-        bank_hash: None,     // set after genesis created
         max_ledger_size: if matches.is_present("limit_ledger_size") {
             let limit_ledger_size = match matches.value_of("limit_ledger_size") {
                 Some(_) => value_t_or_exit!(matches, "limit_ledger_size", u64),
@@ -364,7 +363,6 @@ async fn main() {
         no_snapshot_fetch: matches.is_present("no_snapshot_fetch"),
         require_tower: matches.is_present("require_tower"),
         enable_full_rpc: matches.is_present("enable_full_rpc"),
-        entrypoints: Vec::new(),
         known_validators: None,
     };
 
@@ -373,7 +371,12 @@ async fn main() {
         matches.value_of("memory_requests").unwrap().to_string(),
     );
 
-    let kub_controller = Kubernetes::new(environment_config.namespace, &mut validator_config, pod_requests).await;
+    let mut kub_controller = Kubernetes::new(
+        environment_config.namespace,
+        &mut validator_config,
+        pod_requests,
+    )
+    .await;
     match kub_controller.namespace_exists().await {
         Ok(true) => (),
         Ok(false) => {
@@ -384,7 +387,7 @@ async fn main() {
             return;
         }
         Err(err) => {
-            error!("Error: {}", err);
+            error!("Error: {err}");
             return;
         }
     }
@@ -491,12 +494,12 @@ async fn main() {
         }
     }
 
-    // Create bootstrap labels
+    // Create Bootstrap labels
+    // Bootstrap needs two labels, one for each service.
+    // One for Load Balancer, one direct
     let identity_path = config_directory.join("bootstrap-validator/identity.json");
     let bootstrap_keypair =
         read_keypair_file(identity_path).expect("Failed to read bootstrap keypair file");
-    // Bootstrap needs two labels. It will have two services.
-    // One for Load Balancer, one direct
     bootstrap_validator.add_label(
         "load-balancer/name",
         "load-balancer-selector",
@@ -514,15 +517,15 @@ async fn main() {
         LabelType::Info,
     );
 
-    let bootstrap_replica_set = match kub_controller.create_bootstrap_validator_replica_set(
-        bootstrap_container_name,
-        bootstrap_image_name,
-        bootstrap_secret.metadata.name.clone(),
-        &bootstrap_rs_labels,
+    // create bootstrap replica set
+    match kub_controller.create_bootstrap_validator_replica_set(
+        bootstrap_validator.image(),
+        bootstrap_validator.secret().metadata.name.clone(),
+        bootstrap_validator.replica_set_labels(),
     ) {
-        Ok(replica_set) => replica_set,
+        Ok(replica_set) => bootstrap_validator.set_replica_set(replica_set),
         Err(err) => {
-            error!("Error creating bootstrap validator replicas_set: {}", err);
+            error!("Error creating bootstrap validator replicas_set: {err}");
             return;
         }
     };
