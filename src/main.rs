@@ -1,6 +1,7 @@
 use {
     clap::{command, Arg, ArgGroup},
     log::*,
+    solana_sdk::{signature::keypair::read_keypair_file, signer::Signer},
     std::fs,
     strum::VariantNames,
     validator_lab::{
@@ -366,4 +367,22 @@ async fn main() {
             return;
         }
     }
+
+    // Bootstrap needs two labels. Because it is going to have two services.
+    // One via Load Balancer, one direct
+    let mut bootstrap_rs_labels =
+        kub_controller.create_selector("validator/lb", "load-balancer-selector");
+    bootstrap_rs_labels.insert(
+        "validator/name".to_string(),
+        "bootstrap-validator-selector".to_string(),
+    );
+    bootstrap_rs_labels.insert("validator/type".to_string(), "bootstrap".to_string());
+
+    let identity_path = config_directory.join("bootstrap-validator/identity.json");
+    let bootstrap_keypair =
+        read_keypair_file(identity_path).expect("Failed to read bootstrap keypair file");
+    bootstrap_rs_labels.insert(
+        "validator/identity".to_string(),
+        bootstrap_keypair.pubkey().to_string(),
+    );
 }
