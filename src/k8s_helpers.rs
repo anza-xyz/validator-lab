@@ -4,7 +4,7 @@ use {
         api::{
             apps::v1::{ReplicaSet, ReplicaSetSpec},
             core::v1::{
-                Affinity, Container, EnvVar, PodSecurityContext,
+                Container, EnvVar, PodSecurityContext,
                 PodSpec, PodTemplateSpec, Probe, ResourceRequirements, Secret,
                 Volume, VolumeMount,
             },
@@ -15,6 +15,7 @@ use {
     kube::api::ObjectMeta,
     std::{collections::BTreeMap, error::Error, path::PathBuf},
 };
+
 fn create_secret(name: &str, data: BTreeMap<String, ByteString>) -> Secret {
     Secret {
         metadata: ObjectMeta {

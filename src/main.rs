@@ -8,7 +8,7 @@ use {
     validator_lab::{
         docker::{DockerConfig, DockerImage},
         genesis::{Genesis, GenesisFlags, DEFAULT_INTERNAL_NODE_SOL, DEFAULT_INTERNAL_NODE_STAKE_SOL},
-        kubernetes::Kubernetes,
+        kubernetes::{Kubernetes, PodRequests},
         release::{BuildConfig, BuildType, DeployMethod},
         SolanaRoot, ValidatorType,
         validator_config::ValidatorConfig,
@@ -202,6 +202,25 @@ fn parse_matches() -> clap::ArgMatches {
                 .long("full-rpc")
                 .help("Validator config. Support full RPC services on all nodes"),
         )
+        // kubernetes config
+        .arg(
+            Arg::with_name("cpu_requests")
+                .long("cpu-requests")
+                .takes_value(true)
+                .default_value("20") // 20 cores
+                .help("Kubernetes pod config. Specify minimum CPUs required for deploying validator.
+                    can use millicore notation as well. e.g. 500m (500 millicores) == 0.5 and is equivalent to half a core.
+                    [default: 20]"),
+        )
+        .arg(
+            Arg::with_name("memory_requests")
+                .long("memory-requests")
+                .takes_value(true)
+                .default_value("70Gi") // 70 Gigabytes
+                .help("Kubernetes pod config. Specify minimum memory required for deploying validator.
+                    Can specify unit here (B, Ki, Mi, Gi, Ti) for bytes, kilobytes, etc (2^N notation)
+                    e.g. 1Gi == 1024Mi == 1024Ki == 1,047,576B. [default: 70Gi]"),
+        )
         .get_matches()
 }
 
@@ -340,7 +359,12 @@ async fn main() {
         known_validators: None,
     };
 
-    let kub_controller = Kubernetes::new(environment_config.namespace, &mut validator_config).await;
+    let pod_requests = PodRequests::new(
+        matches.value_of("cpu_requests").unwrap().to_string(),
+        matches.value_of("memory_requests").unwrap().to_string(),
+    );
+
+    let kub_controller = Kubernetes::new(environment_config.namespace, &mut validator_config, pod_requests).await;
     match kub_controller.namespace_exists().await {
         Ok(true) => (),
         Ok(false) => {
