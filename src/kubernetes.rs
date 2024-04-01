@@ -1,11 +1,14 @@
 use {
     crate::{k8s_helpers, ValidatorType, validator_config::ValidatorConfig},
-    k8s_openapi::api::{
-        apps::v1::ReplicaSet,
-        core::v1::{
-            EnvVar, EnvVarSource, Namespace, ObjectFieldSelector,
-            Secret, SecretVolumeSource, Volume, VolumeMount,
+    k8s_openapi::{
+        api::{
+            apps::v1::ReplicaSet,
+            core::v1::{
+                EnvVar, EnvVarSource, Namespace, ObjectFieldSelector,
+                Secret, SecretVolumeSource, Volume, VolumeMount,
+            },
         },
+        apimachinery::pkg::api::resource::Quantity,
     },
     kube::{
         api::{Api, ListParams, PostParams},
@@ -15,18 +18,39 @@ use {
     std::{collections::BTreeMap, error::Error, path::Path},
 };
 
+#[derive(Debug, Clone)]
+pub struct PodRequests {
+    requests: BTreeMap<String, Quantity>,
+}
+
+impl PodRequests {
+    pub fn new(cpu_requests: String, memory_requests: String) -> PodRequests {
+        PodRequests {
+            requests: vec![
+                ("cpu".to_string(), Quantity(cpu_requests)),
+                ("memory".to_string(), Quantity(memory_requests)),
+            ]
+            .into_iter()
+            .collect(),
+        }
+    }
+}
+
 pub struct Kubernetes<'a> {
     k8s_client: Client,
     namespace: String,
     validator_config: &'a mut ValidatorConfig,
+    pod_requests: PodRequests,
 }
 
 impl<'a> Kubernetes<'a> {
-    pub async fn new(namespace: &str, validator_config: &'a mut ValidatorConfig) -> Kubernetes<'a> {
+    pub async fn new(namespace: &str, validator_config: &'a mut ValidatorConfig, pod_requests: PodRequests
+) -> Kubernetes<'a> {
         Self {
             k8s_client: Client::try_default().await.unwrap(),
             namespace: namespace.to_owned(),
             validator_config,
+            pod_requests,
         }
     }
 
