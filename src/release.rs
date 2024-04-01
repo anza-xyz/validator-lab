@@ -2,34 +2,22 @@ use {
     crate::{cat_file, download_to_temp, extract_release_archive},
     git2::Repository,
     log::*,
-    std::{error::Error, fs, path::PathBuf, str::FromStr, time::Instant},
+    std::{error::Error, fs, path::PathBuf, time::Instant},
+    strum_macros::{EnumString, IntoStaticStr, VariantNames},
 };
 
 #[derive(Debug, Clone)]
 pub enum DeployMethod {
     Local(String),
     ReleaseChannel(String),
-    Skip,
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, EnumString, IntoStaticStr, VariantNames)]
+#[strum(serialize_all = "lowercase")]
 pub enum BuildType {
-    Skip,
+    Skip, // use Agave build from the previous run
     Debug,
     Release,
-}
-
-impl FromStr for BuildType {
-    type Err = &'static str;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "skip" => Ok(BuildType::Skip),
-            "debug" => Ok(BuildType::Debug),
-            "release" => Ok(BuildType::Release),
-            _ => Err("invalid string"),
-        }
-    }
 }
 
 pub struct BuildConfig {
@@ -48,7 +36,6 @@ impl BuildConfig {
         let build_path = match deploy_method {
             DeployMethod::Local(_) => solana_root_path.join("farf/bin"),
             DeployMethod::ReleaseChannel(_) => solana_root_path.join("solana-release/bin"),
-            DeployMethod::Skip => solana_root_path.join("farf/bin"),
         };
 
         Ok(BuildConfig {
@@ -70,9 +57,6 @@ impl BuildConfig {
             },
             DeployMethod::Local(_) => {
                 self.setup_local_deploy()?;
-            }
-            DeployMethod::Skip => {
-                return Err("Skip deploy method not implemented yet.".into());
             }
         }
         info!("Completed Prepare Deploy");

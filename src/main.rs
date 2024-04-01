@@ -1,7 +1,8 @@
 use {
-    clap::{command, Arg},
+    clap::{command, Arg, ArgGroup},
     log::*,
     std::fs,
+    strum::VariantNames,
     validator_lab::{
         kubernetes::Kubernetes,
         release::{BuildConfig, BuildType, DeployMethod},
@@ -30,8 +31,8 @@ fn parse_matches() -> clap::ArgMatches {
             Arg::new("build_type")
                 .long("build-type")
                 .takes_value(true)
-                .possible_values(&["skip", "debug", "release"])
-                .default_value("release")
+                .possible_values(BuildType::VARIANTS)
+                .default_value(BuildType::Release.into())
                 .help("Specifies the build type: skip, debug, or release."),
         )
         .arg(
@@ -40,6 +41,11 @@ fn parse_matches() -> clap::ArgMatches {
                 .takes_value(true)
                 .conflicts_with("local_path")
                 .help("Pulls specific release version. e.g. v1.17.2"),
+        )
+        .group(
+            ArgGroup::new("required_group")
+                .args(&["local_path", "release_channel"])
+                .required(true),
         )
         .get_matches()
 }
@@ -65,12 +71,12 @@ async fn main() {
     } else if let Some(release_channel) = matches.value_of("release_channel") {
         DeployMethod::ReleaseChannel(release_channel.to_owned())
     } else {
-        DeployMethod::Skip
+        unreachable!("One of --local-path or --release-channel must be provided.");
     };
 
     let solana_root = match &deploy_method {
         DeployMethod::Local(path) => SolanaRoot::new_from_path(path.into()),
-        DeployMethod::ReleaseChannel(_) | DeployMethod::Skip => SolanaRoot::default(),
+        DeployMethod::ReleaseChannel(_) => SolanaRoot::default(),
     };
 
     let build_type: BuildType = matches

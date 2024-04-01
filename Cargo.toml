@@ -18,6 +18,8 @@ kube = "0.87.2"
 log = "0.4.21"
 reqwest = { version = "0.12.2", features = ["blocking", "brotli", "deflate", "gzip", "rustls-tls", "json"] }
 solana-logger = "1.18.7"
+strum = "0.26.2"
+strum_macros = "0.26.2"
 tar = "0.4.40"
 tokio = { version = "1.29.1", features = ["full"] }
 url = "2.5.0"
