@@ -285,7 +285,9 @@ async fn main() {
         }
     }
 
-    let mut genesis = Genesis::new(solana_root.get_root_path(), genesis_flags);
+    let config_directory = solana_root.get_root_path().join("config-k8s");
+    let mut genesis = Genesis::new(config_directory.clone(), genesis_flags);
+
     match genesis.generate_faucet() {
         Ok(_) => info!("Generated faucet account"),
         Err(err) => {
@@ -352,6 +354,24 @@ async fn main() {
                 error!("Error. Failed to build imge: {err}");
                 return;
             }
+        }
+    }
+
+    let bootstrap_secret = match kub_controller
+        .create_bootstrap_secret("bootstrap-accounts-secret", &config_directory)
+    {
+        Ok(secret) => secret,
+        Err(err) => {
+            error!("Failed to create bootstrap secret! {}", err);
+            return;
+        }
+    };
+
+    match kub_controller.deploy_secret(&bootstrap_secret).await {
+        Ok(_) => info!("Deployed Bootstrap Secret"),
+        Err(err) => {
+            error!("{}", err);
+            return;
         }
     }
 }
