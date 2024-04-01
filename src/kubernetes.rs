@@ -1,9 +1,11 @@
 use {
-    k8s_openapi::api::core::v1::Namespace,
+    crate::k8s_helpers,
+    k8s_openapi::api::core::v1::{Namespace, Secret},
     kube::{
-        api::{Api, ListParams},
+        api::{Api, ListParams, PostParams},
         Client,
     },
+    std::{error::Error, path::PathBuf},
 };
 
 pub struct Kubernetes {
@@ -29,5 +31,31 @@ impl Kubernetes {
             .any(|ns| ns.metadata.name.as_ref() == Some(&self.namespace));
 
         Ok(exists)
+    }
+
+    pub fn create_bootstrap_secret(
+        &self,
+        secret_name: &str,
+        config_dir: &PathBuf,
+    ) -> Result<Secret, Box<dyn Error>> {
+        let faucet_key_path = config_dir.join("faucet.json");
+        let identity_key_path = config_dir.join("bootstrap-validator/identity.json");
+        let vote_key_path = config_dir.join("bootstrap-validator/vote-account.json");
+        let stake_key_path = config_dir.join("bootstrap-validator/stake-account.json");
+
+        let key_files = vec![
+            (faucet_key_path, "faucet"),
+            (identity_key_path, "identity"),
+            (vote_key_path, "vote"),
+            (stake_key_path, "stake"),
+        ];
+
+        k8s_helpers::create_secret_from_files(secret_name, &key_files)
+    }
+
+    pub async fn deploy_secret(&self, secret: &Secret) -> Result<Secret, kube::Error> {
+        let secrets_api: Api<Secret> =
+            Api::namespaced(self.k8s_client.clone(), self.namespace.as_str());
+        secrets_api.create(&PostParams::default(), secret).await
     }
 }

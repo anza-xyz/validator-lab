@@ -110,8 +110,7 @@ pub struct Genesis {
 }
 
 impl Genesis {
-    pub fn new(solana_root: PathBuf, flags: GenesisFlags) -> Self {
-        let config_dir = solana_root.join("config-k8s");
+    pub fn new(config_dir: PathBuf, flags: GenesisFlags) -> Self {
         if config_dir.exists() {
             std::fs::remove_dir_all(&config_dir).unwrap();
         }
