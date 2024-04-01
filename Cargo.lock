@@ -7136,6 +7136,7 @@ dependencies = [
  "rustc_version",
  "rustls",
  "solana-core",
+ "solana-ledger",
  "solana-logger",
  "solana-sdk",
  "strum 0.26.2",
