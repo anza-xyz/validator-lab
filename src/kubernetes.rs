@@ -5,7 +5,7 @@ use {
         api::{Api, ListParams, PostParams},
         Client,
     },
-    std::{error::Error, path::PathBuf},
+    std::{collections::BTreeMap, error::Error, path::PathBuf},
 };
 
 pub struct Kubernetes {
@@ -57,5 +57,9 @@ impl Kubernetes {
         let secrets_api: Api<Secret> =
             Api::namespaced(self.k8s_client.clone(), self.namespace.as_str());
         secrets_api.create(&PostParams::default(), secret).await
+    }
+
+    pub fn create_selector(&self, key: &str, value: &str) -> BTreeMap<String, String> {
+        k8s_helpers::create_selector(key, value)
     }
 }
