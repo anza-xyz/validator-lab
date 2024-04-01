@@ -411,4 +411,17 @@ async fn main() {
         bootstrap_keypair.pubkey().to_string(),
         LabelType::Info,
     );
+
+    let bootstrap_replica_set = match kub_controller.create_bootstrap_validator_replica_set(
+        bootstrap_container_name,
+        bootstrap_image_name,
+        bootstrap_secret.metadata.name.clone(),
+        &bootstrap_rs_labels,
+    ) {
+        Ok(replica_set) => replica_set,
+        Err(err) => {
+            error!("Error creating bootstrap validator replicas_set: {}", err);
+            return;
+        }
+    };
 }
