@@ -1,17 +1,19 @@
 use {
-    clap::{command, Arg, ArgGroup},
+    clap::{command, value_t_or_exit, Arg, ArgGroup},
     log::*,
-    solana_ledger::blockstore_cleanup_service::{DEFAULT_MAX_LEDGER_SHREDS, DEFAULT_MIN_MAX_LEDGER_SHREDS},
+    solana_ledger::blockstore_cleanup_service::{
+        DEFAULT_MAX_LEDGER_SHREDS, DEFAULT_MIN_MAX_LEDGER_SHREDS,
+    },
     solana_sdk::{signature::keypair::read_keypair_file, signer::Signer},
     std::fs,
     strum::VariantNames,
     validator_lab::{
         docker::{DockerConfig, DockerImage},
-        genesis::{Genesis, GenesisFlags, DEFAULT_INTERNAL_NODE_SOL, DEFAULT_INTERNAL_NODE_STAKE_SOL},
+        genesis::{Genesis, GenesisFlags},
         kubernetes::{Kubernetes, PodRequests},
         release::{BuildConfig, BuildType, DeployMethod},
-        SolanaRoot, ValidatorType,
         validator_config::ValidatorConfig,
+        SolanaRoot, ValidatorType,
     },
 };
 
@@ -198,7 +200,7 @@ fn parse_matches() -> clap::ArgMatches {
                 Off by default since validator won't restart if the pod restarts"),
         )
         .arg(
-            Arg::with_name("full_rpc")
+            Arg::with_name("enable_full_rpc")
                 .long("full-rpc")
                 .help("Validator config. Support full RPC services on all nodes"),
         )
@@ -334,8 +336,6 @@ async fn main() {
     let mut validator_config = ValidatorConfig {
         tpu_enable_udp: matches.is_present("tpu_enable_udp"),
         tpu_disable_quic: matches.is_present("tpu_disable_quic"),
-        shred_version: None, // set after genesis created
-        bank_hash: None,     // set after genesis created
         max_ledger_size: if matches.is_present("limit_ledger_size") {
             let limit_ledger_size = match matches.value_of("limit_ledger_size") {
                 Some(_) => value_t_or_exit!(matches, "limit_ledger_size", u64),
@@ -355,7 +355,6 @@ async fn main() {
         no_snapshot_fetch: matches.is_present("no_snapshot_fetch"),
         require_tower: matches.is_present("require_tower"),
         enable_full_rpc: matches.is_present("enable_full_rpc"),
-        entrypoints: Vec::new(),
         known_validators: None,
     };
 
@@ -364,7 +363,12 @@ async fn main() {
         matches.value_of("memory_requests").unwrap().to_string(),
     );
 
-    let kub_controller = Kubernetes::new(environment_config.namespace, &mut validator_config, pod_requests).await;
+    let mut kub_controller = Kubernetes::new(
+        environment_config.namespace,
+        &mut validator_config,
+        pod_requests,
+    )
+    .await;
     match kub_controller.namespace_exists().await {
         Ok(true) => (),
         Ok(false) => {
@@ -426,7 +430,7 @@ async fn main() {
     );
 
     let validator_type = ValidatorType::Bootstrap;
-    let docker_image = DockerImage::new(
+    let bootstrap_docker_image = DockerImage::new(
         matches.value_of("registry_name").unwrap().to_string(),
         validator_type,
         matches.value_of("image_name").unwrap().to_string(),
@@ -437,18 +441,21 @@ async fn main() {
     );
 
     if build_config.docker_build() {
-        match docker.build_image(solana_root.get_root_path(), &docker_image) {
-            Ok(_) => info!("{} image built successfully", docker_image.validator_type()),
+        match docker.build_image(solana_root.get_root_path(), &bootstrap_docker_image) {
+            Ok(_) => info!(
+                "{} image built successfully",
+                bootstrap_docker_image.validator_type()
+            ),
             Err(err) => {
                 error!("Exiting........ {}", err);
                 return;
             }
         }
 
-        match DockerConfig::push_image(&docker_image) {
+        match DockerConfig::push_image(&bootstrap_docker_image) {
             Ok(_) => info!(
                 "{} image pushed successfully",
-                docker_image.validator_type()
+                bootstrap_docker_image.validator_type()
             ),
             Err(err) => {
                 error!("Exiting........ {}", err);
@@ -493,9 +500,8 @@ async fn main() {
         bootstrap_keypair.pubkey().to_string(),
     );
 
-    let bootstrap_replica_set = match kub_controller.create_bootstrap_validator_replica_set(
-        bootstrap_container_name,
-        bootstrap_image_name,
+    let _bootstrap_replica_set = match kub_controller.create_bootstrap_validator_replica_set(
+        &bootstrap_docker_image,
         bootstrap_secret.metadata.name.clone(),
         &bootstrap_rs_labels,
     ) {
