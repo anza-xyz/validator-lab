@@ -56,6 +56,7 @@ pub enum ValidatorType {
 
 pub mod docker;
 pub mod genesis;
+pub mod k8s_helpers;
 pub mod kubernetes;
 pub mod release;
 
