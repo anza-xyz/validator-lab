@@ -4,7 +4,7 @@ use {
         api::{
             apps::v1::{ReplicaSet, ReplicaSetSpec},
             core::v1::{
-                Affinity, Container, EnvVar, PodSecurityContext,
+                Container, EnvVar, PodSecurityContext,
                 PodSpec, PodTemplateSpec, Probe, ResourceRequirements, Secret,
                 Volume, VolumeMount,
             },
