@@ -530,4 +530,46 @@ async fn main() {
                 return;
             }
         };
+    ////////////////////////////////////////////////////////////////////////////////////////////
+    /// //////////////////////////////////////////////////////////////////////////////////
+
+    let bootstrap_service = kub_controller
+        .create_bootstrap_service("bootstrap-validator-service", bootstrap_validator.service_labels());
+    match kub_controller.deploy_service(&bootstrap_service).await {
+        Ok(_) => info!("bootstrap validator service deployed successfully"),
+        Err(err) => error!(
+            "Error! Failed to deploy bootstrap validator service. err: {:?}",
+            err
+        ),
+    }
+
+    //load balancer service. only create one and use for all bootstrap/rpc nodes
+    // service selector matches bootstrap selector
+    let load_balancer_label =
+        kub_controller.create_selector("load-balancer/name", "load-balancer-selector");
+    //create load balancer
+    let load_balancer = kub_controller.create_validator_load_balancer(
+        "bootstrap-and-rpc-node-lb-service",
+        &load_balancer_label,
+    );
+
+    //deploy load balancer
+    match kub_controller.deploy_service(&load_balancer).await {
+        Ok(_) => info!("load balancer service deployed successfully"),
+        Err(err) => error!("Error! Failed to deploy load balancer service. err: {err}"),
+    }
+
+    // wait for bootstrap replicaset to deploy
+    while {
+        match kub_controller
+            .check_replica_set_ready(bootstrap_validator.replica_set_name())
+            .await
+        {
+            Ok(ok) => !ok, // Continue the loop if replica set is not ready: Ok(false)
+            Err(_) => panic!("Error occurred while checking replica set readiness"),
+        }
+    } {
+        info!("replica set: {} not ready...", bootstrap_validator.replica_set_name());
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    }
 }

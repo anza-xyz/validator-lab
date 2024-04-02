@@ -10,7 +10,7 @@ use {
             apps::v1::ReplicaSet,
             core::v1::{
                 EnvVar, EnvVarSource, Namespace, ObjectFieldSelector, Secret, SecretVolumeSource,
-                Volume, VolumeMount,
+                Volume, VolumeMount, Service,
             },
         },
         apimachinery::pkg::api::resource::Quantity,
@@ -219,5 +219,22 @@ impl<'a> Kubernetes<'a> {
         let post_params = PostParams::default();
         // Apply the ReplicaSet
         api.create(&post_params, replica_set).await
+    }
+
+    pub fn create_bootstrap_service(
+        &self,
+        service_name: &str,
+        label_selector: &BTreeMap<String, String>,
+    ) -> Service {
+        k8s_helpers::create_service(service_name, self.namespace.as_str(), label_selector, false)
+    }
+
+    pub async fn deploy_service(&self, service: &Service) -> Result<Service, kube::Error> {
+        let post_params = PostParams::default();
+        // Create an API instance for Services in the specified namespace
+        let service_api: Api<Service> = Api::namespaced(self.k8s_client.clone(), self.namespace.as_str());
+
+        // Create the Service object in the cluster
+        service_api.create(&post_params, service).await
     }
 }
