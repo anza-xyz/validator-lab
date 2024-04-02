@@ -20,6 +20,7 @@ use {
         validator_config::ValidatorConfig,
         EnvironmentConfig, SolanaRoot, ValidatorType,
     },
+    std::{thread, time::Duration},
 };
 
 fn parse_matches() -> clap::ArgMatches {
@@ -530,8 +531,6 @@ async fn main() {
                 return;
             }
         };
-    ////////////////////////////////////////////////////////////////////////////////////////////
-    /// //////////////////////////////////////////////////////////////////////////////////
 
     let bootstrap_service = kub_controller
         .create_bootstrap_service("bootstrap-validator-service", bootstrap_validator.service_labels());
@@ -562,7 +561,7 @@ async fn main() {
     // wait for bootstrap replicaset to deploy
     while {
         match kub_controller
-            .check_replica_set_ready(bootstrap_validator.replica_set_name())
+            .check_replica_set_ready(bootstrap_validator.replica_set_name().as_str())
             .await
         {
             Ok(ok) => !ok, // Continue the loop if replica set is not ready: Ok(false)
