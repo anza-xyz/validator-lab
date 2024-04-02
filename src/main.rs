@@ -29,6 +29,17 @@ fn parse_matches() -> clap::ArgMatches {
                 .help("namespace to deploy test cluster"),
         )
         .arg(
+            Arg::with_name("number_of_validators")
+                .long("num-validators")
+                .takes_value(true)
+                .default_value("1")
+                .help("Number of validator replicas to deploy")
+                .validator(|s| match s.parse::<i32>() {
+                    Ok(n) if n > 0 => Ok(()),
+                    _ => Err(String::from("number_of_validators should be >= 0")),
+                }),
+        )
+        .arg(
             Arg::new("local_path")
                 .long("local-path")
                 .takes_value(true)
@@ -266,6 +277,8 @@ async fn main() {
         namespace: matches.value_of("cluster_namespace").unwrap_or_default(),
     };
 
+    let num_validators = value_t_or_exit!(matches, "number_of_validators", usize);
+
     let deploy_method = if let Some(local_path) = matches.value_of("local_path") {
         DeployMethod::Local(local_path.to_owned())
     } else if let Some(release_channel) = matches.value_of("release_channel") {
@@ -455,6 +468,14 @@ async fn main() {
         Ok(_) => info!("Created genesis successfully"),
         Err(err) => {
             error!("generate genesis error! {err}");
+            return;
+        }
+    }
+
+    match genesis.generate_accounts(ValidatorType::Standard, num_validators) {
+        Ok(_) => (),
+        Err(err) => {
+            error!("generate accounts error! {err}");
             return;
         }
     }
