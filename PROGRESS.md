@@ -20,7 +20,7 @@
     - [x] Push Image to registry
 - [ ] Create & Deploy Secrets
     - [x] Bootstrap
-    - [ ] Validator (regular)
+    - [x] Validator (regular)
     - [ ] RPC nodes
     - [ ] Client
 - [ ] Create & Deploy Selector

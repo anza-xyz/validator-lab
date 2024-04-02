@@ -102,6 +102,29 @@ impl<'a> Kubernetes<'a> {
         k8s_helpers::create_secret_from_files(secret_name, &key_files)
     }
 
+    pub fn create_validator_secret(
+        &self,
+        validator_index: usize,
+        config_dir: &PathBuf,
+    ) -> Result<Secret, Box<dyn Error>> {
+        let secret_name = format!("validator-accounts-secret-{}", validator_index);
+
+        let accounts = ["identity", "vote", "stake"];
+        let key_files: Vec<(PathBuf, &str)> = accounts
+            .iter()
+            .map(|&account| {
+                let file_name = if account == "identity" {
+                    format!("validator-{account}-{validator_index}.json")
+                } else {
+                    format!("validator-{account}-account-{validator_index}.json")
+                };
+                (config_dir.join(file_name), account)
+            })
+            .collect();
+
+        k8s_helpers::create_secret_from_files(&secret_name, &key_files)
+    }
+
     fn add_known_validator(&mut self, pubkey: Pubkey) {
         if let Some(ref mut known_validators) = self.validator_config.known_validators {
             known_validators.push(pubkey);
