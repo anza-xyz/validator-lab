@@ -12,6 +12,7 @@ use {
         genesis::{Genesis, GenesisFlags},
         kubernetes::{Kubernetes, PodRequests},
         release::{BuildConfig, BuildType, DeployMethod},
+        validator::Validator,
         validator_config::ValidatorConfig,
         SolanaRoot, ValidatorType,
     },
@@ -429,22 +430,21 @@ async fn main() {
         deploy_method,
     );
 
-    let validator_type = ValidatorType::Bootstrap;
-    let bootstrap_docker_image = DockerImage::new(
+    let mut bootstrap_validator = Validator::new(DockerImage::new(
         matches.value_of("registry_name").unwrap().to_string(),
-        validator_type,
+        ValidatorType::Bootstrap,
         matches.value_of("image_name").unwrap().to_string(),
         matches
             .value_of("image_tag")
             .unwrap_or_default()
             .to_string(),
-    );
+    ));
 
     if build_config.docker_build() {
-        match docker.build_image(solana_root.get_root_path(), &bootstrap_docker_image) {
+        match docker.build_image(solana_root.get_root_path(), bootstrap_validator.image()) {
             Ok(_) => info!(
                 "{} image built successfully",
-                bootstrap_docker_image.validator_type()
+                bootstrap_validator.validator_type()
             ),
             Err(err) => {
                 error!("Exiting........ {}", err);
@@ -452,10 +452,10 @@ async fn main() {
             }
         }
 
-        match DockerConfig::push_image(&bootstrap_docker_image) {
+        match DockerConfig::push_image(bootstrap_validator.image()) {
             Ok(_) => info!(
                 "{} image pushed successfully",
-                bootstrap_docker_image.validator_type()
+                bootstrap_validator.validator_type()
             ),
             Err(err) => {
                 error!("Exiting........ {}", err);
@@ -464,17 +464,18 @@ async fn main() {
         }
     }
 
-    let bootstrap_secret = match kub_controller
-        .create_bootstrap_secret("bootstrap-accounts-secret", &config_directory)
-    {
-        Ok(secret) => secret,
+    match kub_controller.create_bootstrap_secret("bootstrap-accounts-secret", &config_directory) {
+        Ok(secret) => bootstrap_validator.set_secret(secret),
         Err(err) => {
             error!("Failed to create bootstrap secret! {}", err);
             return;
         }
     };
 
-    match kub_controller.deploy_secret(&bootstrap_secret).await {
+    match kub_controller
+        .deploy_secret(bootstrap_validator.secret())
+        .await
+    {
         Ok(_) => info!("Deployed Bootstrap Secret"),
         Err(err) => {
             error!("{}", err);
@@ -482,30 +483,22 @@ async fn main() {
         }
     }
 
-    // Bootstrap needs two labels. Because it is going to have two services.
-    // One via Load Balancer, one direct
-    let mut bootstrap_rs_labels =
-        kub_controller.create_selector("validator/lb", "load-balancer-selector");
-    bootstrap_rs_labels.insert(
-        "validator/name".to_string(),
-        "bootstrap-validator-selector".to_string(),
-    );
-    bootstrap_rs_labels.insert("validator/type".to_string(), "bootstrap".to_string());
-
+    // Create bootstrap labels
     let identity_path = config_directory.join("bootstrap-validator/identity.json");
     let bootstrap_keypair =
         read_keypair_file(identity_path).expect("Failed to read bootstrap keypair file");
-    bootstrap_rs_labels.insert(
-        "validator/identity".to_string(),
-        bootstrap_keypair.pubkey().to_string(),
-    );
+    bootstrap_validator.add_label("validator/lb", "load-balancer-selector");
+    bootstrap_validator.add_label("validator/name", "bootstrap-validator-selector");
+    bootstrap_validator.add_label("validator/type", "bootstrap");
+    bootstrap_validator.add_label("validator/identity", bootstrap_keypair.pubkey().to_string());
 
-    let _bootstrap_replica_set = match kub_controller.create_bootstrap_validator_replica_set(
-        &bootstrap_docker_image,
-        bootstrap_secret.metadata.name.clone(),
-        &bootstrap_rs_labels,
+    // create bootstrap replica set
+    match kub_controller.create_bootstrap_validator_replica_set(
+        bootstrap_validator.image(),
+        bootstrap_validator.secret().metadata.name.clone(),
+        bootstrap_validator.labels(),
     ) {
-        Ok(replica_set) => replica_set,
+        Ok(replica_set) => bootstrap_validator.set_replica_set(replica_set),
         Err(err) => {
             error!("Error creating bootstrap validator replicas_set: {}", err);
             return;

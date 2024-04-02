@@ -40,12 +40,6 @@ pub fn create_secret_from_files(
     Ok(create_secret(secret_name, data))
 }
 
-pub fn create_selector(key: &str, value: &str) -> BTreeMap<String, String> {
-    let mut btree = BTreeMap::new();
-    btree.insert(key.to_string(), value.to_string());
-    btree
-}
-
 #[allow(clippy::too_many_arguments)]
 pub fn create_replica_set(
     name: &ValidatorType,
