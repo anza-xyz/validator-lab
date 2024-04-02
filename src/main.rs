@@ -16,6 +16,7 @@ use {
         validator_config::ValidatorConfig,
         SolanaRoot, ValidatorType,
     },
+    std::{thread, time::Duration},
 };
 
 fn parse_matches() -> clap::ArgMatches {
@@ -487,10 +488,10 @@ async fn main() {
     let identity_path = config_directory.join("bootstrap-validator/identity.json");
     let bootstrap_keypair =
         read_keypair_file(identity_path).expect("Failed to read bootstrap keypair file");
-    bootstrap_validator.add_label("validator/lb", "load-balancer-selector", LabelType::replica_set);
-    bootstrap_validator.add_label("validator/name", "bootstrap-validator-selector", LabelType::replica_set);
-    bootstrap_validator.add_label("validator/type", "bootstrap", LabelType::replica_set);
-    bootstrap_validator.add_label("validator/identity", bootstrap_keypair.pubkey().to_string(), LabelType::replica_set);
+    bootstrap_validator.add_label("load-balancer/name", "load-balancer-selector", LabelType::ValidatorReplicaSet);
+    bootstrap_validator.add_label("service/name", "bootstrap-validator-selector", LabelType::ValidatorReplicaSet);
+    bootstrap_validator.add_label("validator/type", "bootstrap", LabelType::ValidatorReplicaSet);
+    bootstrap_validator.add_label("validator/identity", bootstrap_keypair.pubkey().to_string(), LabelType::ValidatorReplicaSet);
 
     // create bootstrap replica set
     match kub_controller.create_bootstrap_validator_replica_set(
@@ -521,7 +522,7 @@ async fn main() {
         }
     };
 
-    bootstrap_validator.add_label("service/name", "bootstrap-validator-selector", LabelType::replica_set);
+    bootstrap_validator.add_label("service/name", "bootstrap-validator-selector", LabelType::ValidatorReplicaSet);
 
     let bootstrap_service = kub_controller
         .create_bootstrap_service("bootstrap-validator-service", bootstrap_validator.service_labels());
@@ -535,7 +536,7 @@ async fn main() {
 
     //load balancer service. only create one and use for all deployments
     let load_balancer_label =
-        kub_controller.create_selector("app.kubernetes.io/lb", "load-balancer-selector");
+        kub_controller.create_selector("load-balancer/name", "load-balancer-selector");
     //create load balancer
     let load_balancer = kub_controller.create_validator_load_balancer(
         "bootstrap-and-non-voting-lb-service",
@@ -554,14 +555,14 @@ async fn main() {
     // wait for bootstrap replicaset to deploy
     while {
         match kub_controller
-            .check_replica_set_ready(bootstrap_replica_set_name.as_str())
+            .check_replica_set_ready(bootstrap_validator.replica_set_name().as_str())
             .await
         {
             Ok(ok) => !ok, // Continue the loop if replica set is not ready: Ok(false)
             Err(_) => panic!("Error occurred while checking replica set readiness"),
         }
     } {
-        info!("replica set: {} not ready...", bootstrap_replica_set_name);
+        info!("replica set: {} not ready...", bootstrap_validator.replica_set_name());
         thread::sleep(Duration::from_secs(1));
     }
 }

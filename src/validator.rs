@@ -5,8 +5,9 @@ use {
 };
 
 pub enum LabelType {
-    replica_set,
-    service,
+    ValidatorReplicaSet,
+    ValidatorService,
+    // ValidatorLoadBalancer,
 }
 
 pub struct Validator {
@@ -16,10 +17,16 @@ pub struct Validator {
     replica_set_labels: BTreeMap<String, String>,
     replica_set: ReplicaSet,
     service_labels: BTreeMap<String, String>,
+    // load_balancer_labels: Option<BTreeMap<String, String>>,
 }
 
 impl Validator {
     pub fn new(image: DockerImage) -> Self {
+        // let load_balancer_labels = match image.validator_type() {
+        //     ValidatorType::Bootstrap | ValidatorType::RPC => Some(BTreeMap::new()),
+        //     ValidatorType::Client | ValidatorType::Standard => None,
+        // };
+
         Self {
             validator_type: image.validator_type(),
             image,
@@ -27,6 +34,7 @@ impl Validator {
             replica_set_labels: BTreeMap::new(),
             replica_set: ReplicaSet::default(),
             service_labels: BTreeMap::new(),
+            // load_balancer_labels,
         }
     }
 
@@ -48,10 +56,10 @@ impl Validator {
         V: Into<String>,
     {
         match label_type {
-            LabelType::replica_set => {
+            LabelType::ValidatorReplicaSet => {
                 self.replica_set_labels.insert(key.into(), value.into());
             }
-            LabelType::service => {
+            LabelType::ValidatorService => {
                 self.service_labels.insert(key.into(), value.into());
             }
         }

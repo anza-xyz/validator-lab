@@ -151,3 +151,9 @@ pub fn create_service(
         ..Default::default()
     }
 }
+
+pub fn create_selector(key: &str, value: &str) -> BTreeMap<String, String> {
+    let mut btree = BTreeMap::new();
+    btree.insert(key.to_string(), value.to_string());
+    btree
+}
