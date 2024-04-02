@@ -17,16 +17,10 @@ pub struct Validator {
     info_labels: BTreeMap<String, String>,
     replica_set: ReplicaSet,
     service_labels: BTreeMap<String, String>,
-    // load_balancer_labels: Option<BTreeMap<String, String>>,
 }
 
 impl Validator {
     pub fn new(image: DockerImage) -> Self {
-        // let load_balancer_labels = match image.validator_type() {
-        //     ValidatorType::Bootstrap | ValidatorType::RPC => Some(BTreeMap::new()),
-        //     ValidatorType::Client | ValidatorType::Standard => None,
-        // };
-
         Self {
             validator_type: image.validator_type(),
             image,
@@ -34,7 +28,6 @@ impl Validator {
             info_labels: BTreeMap::new(),
             replica_set: ReplicaSet::default(),
             service_labels: BTreeMap::new(),
-            // load_balancer_labels,
         }
     }
 

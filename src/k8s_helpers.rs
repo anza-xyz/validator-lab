@@ -5,8 +5,8 @@ use {
             apps::v1::{ReplicaSet, ReplicaSetSpec},
             core::v1::{
                 Container, EnvVar, PodSecurityContext, PodSpec, PodTemplateSpec, Probe,
-                ResourceRequirements, Secret, Volume, VolumeMount, Service, ServiceSpec,
-                ServicePort,
+                ResourceRequirements, Secret, Service, ServicePort, ServiceSpec, Volume,
+                VolumeMount,
             },
         },
         apimachinery::pkg::{api::resource::Quantity, apis::meta::v1::LabelSelector},
@@ -122,19 +122,19 @@ pub fn create_replica_set(
 }
 
 pub fn create_service(
-    service_name: &str,
-    namespace: &str,
-    label_selector: &BTreeMap<String, String>,
+    service_name: String,
+    namespace: String,
+    label_selector: BTreeMap<String, String>,
     is_load_balancer: bool,
 ) -> Service {
     Service {
         metadata: ObjectMeta {
-            name: Some(service_name.to_string()),
-            namespace: Some(namespace.to_string()),
+            name: Some(service_name),
+            namespace: Some(namespace),
             ..Default::default()
         },
         spec: Some(ServiceSpec {
-            selector: Some(label_selector.clone()),
+            selector: Some(label_selector),
             type_: if is_load_balancer {
                 Some("LoadBalancer".to_string())
             } else {

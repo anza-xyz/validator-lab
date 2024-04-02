@@ -20,7 +20,6 @@ use {
         validator_config::ValidatorConfig,
         EnvironmentConfig, SolanaRoot, ValidatorType,
     },
-    std::{thread, time::Duration},
 };
 
 fn parse_matches() -> clap::ArgMatches {
@@ -532,14 +531,14 @@ async fn main() {
             }
         };
 
-    let bootstrap_service = kub_controller
-        .create_bootstrap_service("bootstrap-validator-service", bootstrap_validator.service_labels());
+    // create and deploy bootstrap-service
+    let bootstrap_service = kub_controller.create_bootstrap_service(
+        "bootstrap-validator-service",
+        bootstrap_validator.service_labels(),
+    );
     match kub_controller.deploy_service(&bootstrap_service).await {
         Ok(_) => info!("bootstrap validator service deployed successfully"),
-        Err(err) => error!(
-            "Error! Failed to deploy bootstrap validator service. err: {:?}",
-            err
-        ),
+        Err(err) => error!("Error! Failed to deploy bootstrap validator service. err: {err}"),
     }
 
     //load balancer service. only create one and use for all bootstrap/rpc nodes
@@ -568,7 +567,10 @@ async fn main() {
             Err(_) => panic!("Error occurred while checking replica set readiness"),
         }
     } {
-        info!("replica set: {} not ready...", bootstrap_validator.replica_set_name());
+        info!(
+            "replica set: {} not ready...",
+            bootstrap_validator.replica_set_name()
+        );
         std::thread::sleep(std::time::Duration::from_secs(1));
     }
 }
