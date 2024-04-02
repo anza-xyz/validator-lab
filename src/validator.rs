@@ -4,12 +4,18 @@ use {
     std::{collections::BTreeMap, string::String},
 };
 
+pub enum LabelType {
+    replica_set,
+    service,
+}
+
 pub struct Validator {
     validator_type: ValidatorType,
     image: DockerImage,
     secret: Secret,
     replica_set_labels: BTreeMap<String, String>,
     replica_set: ReplicaSet,
+    service_labels: BTreeMap<String, String>,
 }
 
 impl Validator {
@@ -20,6 +26,7 @@ impl Validator {
             secret: Secret::default(),
             replica_set_labels: BTreeMap::new(),
             replica_set: ReplicaSet::default(),
+            service_labels: BTreeMap::new(),
         }
     }
 
@@ -35,16 +42,27 @@ impl Validator {
         &self.validator_type
     }
 
-    pub fn add_label<K, V>(&mut self, key: K, value: V)
+    pub fn add_label<K, V>(&mut self, key: K, value: V, label_type: LabelType)
     where
         K: Into<String>,
         V: Into<String>,
     {
-        self.replica_set_labels.insert(key.into(), value.into());
+        match label_type {
+            LabelType::replica_set => {
+                self.replica_set_labels.insert(key.into(), value.into());
+            }
+            LabelType::service => {
+                self.service_labels.insert(key.into(), value.into());
+            }
+        }
     }
 
-    pub fn labels(&self) -> &BTreeMap<String, String> {
+    pub fn replica_set_labels(&self) -> &BTreeMap<String, String> {
         &self.replica_set_labels
+    }
+
+    pub fn service_labels(&self) -> &BTreeMap<String, String> {
+        &self.service_labels
     }
 
     pub fn set_secret(&mut self, secret: Secret) {
