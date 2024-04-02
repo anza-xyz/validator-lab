@@ -489,7 +489,6 @@ async fn main() {
         bootstrap_validator.add_label("validator/lb", "load-balancer-selector");
         bootstrap_validator.add_label("validator/name", "bootstrap-validator-selector");
         bootstrap_validator.add_label("validator/type", "bootstrap");
-        bootstrap_validator.add_label("validator/identity", bootstrap_keypair.pubkey().to_string());
 
         // create bootstrap replica set
         match kub_controller.create_bootstrap_validator_replica_set(
