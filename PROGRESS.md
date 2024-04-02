@@ -29,7 +29,7 @@
     - [ ] RPC nodes
     - [ ] Client
 - [ ] Create & Deploy Replica Set
-    - [ ] Bootstrap
+    - [x] Bootstrap
     - [ ] Validator (regular)
     - [ ] RPC nodes
     - [ ] Client

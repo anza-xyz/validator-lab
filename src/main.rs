@@ -374,7 +374,7 @@ async fn main() {
             return;
         }
         Err(err) => {
-            error!("Error: {}", err);
+            error!("Error: {err}");
             return;
         }
     }
@@ -499,6 +499,22 @@ async fn main() {
             Ok(replica_set) => bootstrap_validator.set_replica_set(replica_set),
             Err(err) => {
                 error!("Error creating bootstrap validator replicas_set: {err}");
+                return;
+            }
+        };
+
+        match kub_controller
+            .deploy_replicas_set(bootstrap_validator.replica_set())
+            .await
+        {
+            Ok(_) => {
+                info!(
+                    "{} deployed successfully",
+                    bootstrap_validator.replica_set_name()
+                );
+            }
+            Err(err) => {
+                error!("Error! Failed to deploy bootstrap validator replicas_set. err: {err}");
                 return;
             }
         };
