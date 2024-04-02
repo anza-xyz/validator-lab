@@ -57,3 +57,34 @@ cargo run --bin cluster --
     --base-image <base-image>           # e.g. ubuntu:20.04
     --image-name <docker-image-name>    # e.g. cluster-image
 ```
+
+## Kubernetes Cheatsheet
+Create namespace:
+```
+kubectl create ns <namespace>
+```
+
+Delete namespace:
+```
+kubectl delete ns <namespace>
+```
+
+Get running pods:
+```
+kubectl get pods -n <namespace>
+```
+
+Get pod logs:
+```
+kubectl logs -n <namespace> <pod-name>
+```
+
+Exec into pod:
+```
+kubectl exec -it -n <namespace> <pod-name> -- /bin/bash
+```
+
+Get information about pod:
+```
+kubectl describe pod -n <namespace> <pod-name>
+```

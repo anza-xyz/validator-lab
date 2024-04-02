@@ -5,7 +5,7 @@ use {
             apps::v1::ReplicaSet,
             core::v1::{
                 EnvVar, EnvVarSource, Namespace, ObjectFieldSelector, Secret, SecretVolumeSource,
-                Volume, VolumeMount, Service,
+                Service, Volume, VolumeMount,
             },
         },
         apimachinery::pkg::api::resource::Quantity,
@@ -220,7 +220,8 @@ impl<'a> Kubernetes<'a> {
     pub async fn deploy_service(&self, service: &Service) -> Result<Service, kube::Error> {
         let post_params = PostParams::default();
         // Create an API instance for Services in the specified namespace
-        let service_api: Api<Service> = Api::namespaced(self.k8s_client.clone(), self.namespace.as_str());
+        let service_api: Api<Service> =
+            Api::namespaced(self.k8s_client.clone(), self.namespace.as_str());
 
         // Create the Service object in the cluster
         service_api.create(&post_params, service).await
@@ -242,7 +243,8 @@ impl<'a> Kubernetes<'a> {
         &self,
         replica_set_name: &str,
     ) -> Result<bool, kube::Error> {
-        let replica_sets: Api<ReplicaSet> = Api::namespaced(self.k8s_client.clone(), self.namespace.as_str());
+        let replica_sets: Api<ReplicaSet> =
+            Api::namespaced(self.k8s_client.clone(), self.namespace.as_str());
         let replica_set = replica_sets.get(replica_set_name).await?;
 
         let desired_validators = replica_set.spec.as_ref().unwrap().replicas.unwrap_or(1);

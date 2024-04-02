@@ -5,18 +5,17 @@ use {
         DEFAULT_MAX_LEDGER_SHREDS, DEFAULT_MIN_MAX_LEDGER_SHREDS,
     },
     solana_sdk::{signature::keypair::read_keypair_file, signer::Signer},
-    std::fs,
+    std::{fs, thread, time::Duration},
     strum::VariantNames,
     validator_lab::{
         docker::{DockerConfig, DockerImage},
         genesis::{Genesis, GenesisFlags},
         kubernetes::{Kubernetes, PodRequests},
         release::{BuildConfig, BuildType, DeployMethod},
-        validator::{Validator, LabelType},
+        validator::{LabelType, Validator},
         validator_config::ValidatorConfig,
         SolanaRoot, ValidatorType,
     },
-    std::{thread, time::Duration},
 };
 
 fn parse_matches() -> clap::ArgMatches {
@@ -483,85 +482,111 @@ async fn main() {
             }
         }
 
-    // Create bootstrap labels
-    let identity_path = config_directory.join("bootstrap-validator/identity.json");
-    let bootstrap_keypair =
-        read_keypair_file(identity_path).expect("Failed to read bootstrap keypair file");
-    bootstrap_validator.add_label("load-balancer/name", "load-balancer-selector", LabelType::ValidatorReplicaSet);
-    bootstrap_validator.add_label("service/name", "bootstrap-validator-selector", LabelType::ValidatorReplicaSet);
-    bootstrap_validator.add_label("validator/type", "bootstrap", LabelType::ValidatorReplicaSet);
-    bootstrap_validator.add_label("validator/identity", bootstrap_keypair.pubkey().to_string(), LabelType::ValidatorReplicaSet);
+        // Create bootstrap labels
+        let identity_path = config_directory.join("bootstrap-validator/identity.json");
+        let bootstrap_keypair =
+            read_keypair_file(identity_path).expect("Failed to read bootstrap keypair file");
+        bootstrap_validator.add_label(
+            "load-balancer/name",
+            "load-balancer-selector",
+            LabelType::ValidatorReplicaSet,
+        );
+        bootstrap_validator.add_label(
+            "service/name",
+            "bootstrap-validator-selector",
+            LabelType::ValidatorReplicaSet,
+        );
+        bootstrap_validator.add_label(
+            "validator/type",
+            "bootstrap",
+            LabelType::ValidatorReplicaSet,
+        );
+        bootstrap_validator.add_label(
+            "validator/identity",
+            bootstrap_keypair.pubkey().to_string(),
+            LabelType::ValidatorReplicaSet,
+        );
 
-    // create bootstrap replica set
-    match kub_controller.create_bootstrap_validator_replica_set(
-        bootstrap_validator.image(),
-        bootstrap_validator.secret().metadata.name.clone(),
-        bootstrap_validator.replica_set_labels(),
-    ) {
-        Ok(replica_set) => bootstrap_validator.set_replica_set(replica_set),
-        Err(err) => {
-            error!("Error creating bootstrap validator replicas_set: {err}");
-            return;
-        }
-    };
+        // create bootstrap replica set
+        match kub_controller.create_bootstrap_validator_replica_set(
+            bootstrap_validator.image(),
+            bootstrap_validator.secret().metadata.name.clone(),
+            bootstrap_validator.replica_set_labels(),
+        ) {
+            Ok(replica_set) => bootstrap_validator.set_replica_set(replica_set),
+            Err(err) => {
+                error!("Error creating bootstrap validator replicas_set: {err}");
+                return;
+            }
+        };
 
-    match kub_controller
-        .deploy_replicas_set(bootstrap_validator.replica_set())
-        .await
-    {
-        Ok(_) => {
-            info!(
-                "{} deployed successfully",
-                bootstrap_validator.replica_set_name()
-            );
-        }
-        Err(err) => {
-            error!("Error! Failed to deploy bootstrap validator replicas_set. err: {err}");
-            return;
-        }
-    };
-
-    bootstrap_validator.add_label("service/name", "bootstrap-validator-selector", LabelType::ValidatorReplicaSet);
-
-    let bootstrap_service = kub_controller
-        .create_bootstrap_service("bootstrap-validator-service", bootstrap_validator.service_labels());
-    match kub_controller.deploy_service(&bootstrap_service).await {
-        Ok(_) => info!("bootstrap validator service deployed successfully"),
-        Err(err) => error!(
-            "Error! Failed to deploy bootstrap validator service. err: {:?}",
-            err
-        ),
-    }
-
-    //load balancer service. only create one and use for all deployments
-    let load_balancer_label =
-        kub_controller.create_selector("load-balancer/name", "load-balancer-selector");
-    //create load balancer
-    let load_balancer = kub_controller.create_validator_load_balancer(
-        "bootstrap-and-non-voting-lb-service",
-        &load_balancer_label,
-    );
-
-    //deploy load balancer
-    match kub_controller.deploy_service(&load_balancer).await {
-        Ok(_) => info!("load balancer service deployed successfully"),
-        Err(err) => error!(
-            "Error! Failed to deploy load balancer service. err: {:?}",
-            err
-        ),
-    }
-
-    // wait for bootstrap replicaset to deploy
-    while {
         match kub_controller
-            .check_replica_set_ready(bootstrap_validator.replica_set_name().as_str())
+            .deploy_replicas_set(bootstrap_validator.replica_set())
             .await
         {
-            Ok(ok) => !ok, // Continue the loop if replica set is not ready: Ok(false)
-            Err(_) => panic!("Error occurred while checking replica set readiness"),
+            Ok(_) => {
+                info!(
+                    "{} deployed successfully",
+                    bootstrap_validator.replica_set_name()
+                );
+            }
+            Err(err) => {
+                error!("Error! Failed to deploy bootstrap validator replicas_set. err: {err}");
+                return;
+            }
+        };
+
+        bootstrap_validator.add_label(
+            "service/name",
+            "bootstrap-validator-selector",
+            LabelType::ValidatorService,
+        );
+
+        let bootstrap_service = kub_controller.create_bootstrap_service(
+            "bootstrap-validator-service",
+            bootstrap_validator.service_labels(),
+        );
+        match kub_controller.deploy_service(&bootstrap_service).await {
+            Ok(_) => info!("bootstrap validator service deployed successfully"),
+            Err(err) => error!(
+                "Error! Failed to deploy bootstrap validator service. err: {:?}",
+                err
+            ),
         }
-    } {
-        info!("replica set: {} not ready...", bootstrap_validator.replica_set_name());
-        thread::sleep(Duration::from_secs(1));
+
+        //load balancer service. only create one and use for all deployments
+        let load_balancer_label =
+            kub_controller.create_selector("load-balancer/name", "load-balancer-selector");
+        //create load balancer
+        let load_balancer = kub_controller.create_validator_load_balancer(
+            "bootstrap-and-non-voting-lb-service",
+            &load_balancer_label,
+        );
+
+        //deploy load balancer
+        match kub_controller.deploy_service(&load_balancer).await {
+            Ok(_) => info!("load balancer service deployed successfully"),
+            Err(err) => error!(
+                "Error! Failed to deploy load balancer service. err: {:?}",
+                err
+            ),
+        }
+
+        // wait for bootstrap replicaset to deploy
+        while {
+            match kub_controller
+                .check_replica_set_ready(bootstrap_validator.replica_set_name().as_str())
+                .await
+            {
+                Ok(ok) => !ok, // Continue the loop if replica set is not ready: Ok(false)
+                Err(_) => panic!("Error occurred while checking replica set readiness"),
+            }
+        } {
+            info!(
+                "replica set: {} not ready...",
+                bootstrap_validator.replica_set_name()
+            );
+            thread::sleep(Duration::from_secs(1));
+        }
     }
 }
