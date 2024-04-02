@@ -21,10 +21,10 @@ pub enum SecretType {
     File { path: PathBuf },
 }
 
-fn build_secret(name: &str, data: BTreeMap<String, ByteString>) -> Secret {
+fn build_secret(name: String, data: BTreeMap<String, ByteString>) -> Secret {
     Secret {
         metadata: ObjectMeta {
-            name: Some(name.to_string()),
+            name: Some(name),
             ..Default::default()
         },
         data: Some(data),
@@ -33,7 +33,7 @@ fn build_secret(name: &str, data: BTreeMap<String, ByteString>) -> Secret {
 }
 
 pub fn create_secret(
-    secret_name: &str,
+    secret_name: String,
     secrets: BTreeMap<String, SecretType>,
 ) -> Result<Secret, Box<dyn Error>> {
     let data = secrets

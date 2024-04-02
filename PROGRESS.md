@@ -41,7 +41,7 @@
 - [x] Check Bootstrap is deployed and running
 - [x] Build and deploy Load Balancer (sits in front of bootstrap and RPC nodes)
 - [ ] Add metrics
-    - [ ] Bootstrap
+    - [x] Bootstrap
     - [ ] Validator (regular)
     - [ ] RPC nodes
     - [ ] Client
