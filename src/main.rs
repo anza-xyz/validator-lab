@@ -380,7 +380,7 @@ async fn main() {
             return;
         }
         Err(err) => {
-            error!("Error: {}", err);
+            error!("Error: {err}");
             return;
         }
     }
@@ -388,7 +388,7 @@ async fn main() {
     match build_config.prepare().await {
         Ok(_) => info!("Validator setup prepared successfully"),
         Err(err) => {
-            error!("Error: {}", err);
+            error!("Error: {err}");
             return;
         }
     }
@@ -399,7 +399,7 @@ async fn main() {
     match genesis.generate_faucet() {
         Ok(_) => (),
         Err(err) => {
-            error!("generate faucet error! {}", err);
+            error!("generate faucet error! {err}");
             return;
         }
     }
@@ -407,7 +407,7 @@ async fn main() {
     match genesis.generate_accounts(ValidatorType::Bootstrap, 1) {
         Ok(_) => (),
         Err(err) => {
-            error!("generate accounts error! {}", err);
+            error!("generate accounts error! {err}");
             return;
         }
     }
@@ -447,7 +447,7 @@ async fn main() {
                 bootstrap_validator.validator_type()
             ),
             Err(err) => {
-                error!("Exiting........ {}", err);
+                error!("Exiting........ {err}");
                 return;
             }
         }
@@ -458,7 +458,7 @@ async fn main() {
                 bootstrap_validator.validator_type()
             ),
             Err(err) => {
-                error!("Exiting........ {}", err);
+                error!("Exiting........ {err}");
                 return;
             }
         }
@@ -467,7 +467,7 @@ async fn main() {
     match kub_controller.create_bootstrap_secret("bootstrap-accounts-secret", &config_directory) {
         Ok(secret) => bootstrap_validator.set_secret(secret),
         Err(err) => {
-            error!("Failed to create bootstrap secret! {}", err);
+            error!("Failed to create bootstrap secret! {err}");
             return;
         }
     };
@@ -478,7 +478,7 @@ async fn main() {
     {
         Ok(_) => info!("Deployed Bootstrap Secret"),
         Err(err) => {
-            error!("{}", err);
+            error!("{err}");
             return;
         }
     }
@@ -500,7 +500,23 @@ async fn main() {
     ) {
         Ok(replica_set) => bootstrap_validator.set_replica_set(replica_set),
         Err(err) => {
-            error!("Error creating bootstrap validator replicas_set: {}", err);
+            error!("Error creating bootstrap validator replicas_set: {err}");
+            return;
+        }
+    };
+
+    match kub_controller
+        .deploy_replicas_set(bootstrap_validator.replica_set())
+        .await
+    {
+        Ok(_) => {
+            info!(
+                "{} deployed successfully",
+                bootstrap_validator.replica_set_name()
+            );
+        }
+        Err(err) => {
+            error!("Error! Failed to deploy bootstrap validator replicas_set. err: {err}");
             return;
         }
     };

@@ -190,7 +190,7 @@ USER solana
 
 RUN mkdir -p /home/solana/k8s-cluster-scripts
 # TODO: this needs to be changed for non bootstrap, this should be ./src/scripts/<validator-type>-startup-scripts.sh
-COPY {startup_script_directory}/bootstrap-startup-script.sh /home/solana/k8s-cluster-scripts
+COPY {startup_script_directory} /home/solana/k8s-cluster-scripts
  
 RUN mkdir -p /home/solana/ledger
 COPY --chown=solana:solana ./config-k8s/bootstrap-validator  /home/solana/ledger

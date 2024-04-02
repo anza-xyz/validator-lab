@@ -197,4 +197,15 @@ impl<'a> Kubernetes<'a> {
 
         flags
     }
+
+    pub async fn deploy_replicas_set(
+        &self,
+        replica_set: &ReplicaSet,
+    ) -> Result<ReplicaSet, kube::Error> {
+        let api: Api<ReplicaSet> =
+            Api::namespaced(self.k8s_client.clone(), self.namespace.as_str());
+        let post_params = PostParams::default();
+        // Apply the ReplicaSet
+        api.create(&post_params, replica_set).await
+    }
 }

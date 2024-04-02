@@ -58,4 +58,8 @@ impl Validator {
     pub fn replica_set(&self) -> &ReplicaSet {
         &self.replica_set
     }
+
+    pub fn replica_set_name(&self) -> &String {
+        self.replica_set.metadata.name.as_ref().unwrap()
+    }
 }
