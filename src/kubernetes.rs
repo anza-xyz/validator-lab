@@ -197,8 +197,4 @@ impl<'a> Kubernetes<'a> {
 
         flags
     }
-
-    pub fn create_selector(&self, key: &str, value: &str) -> BTreeMap<String, String> {
-        k8s_helpers::create_selector(key, value)
-    }
 }
