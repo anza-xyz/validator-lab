@@ -667,4 +667,23 @@ async fn main() {
         );
         thread::sleep(Duration::from_secs(1));
     }
+
+    // Create and deploy validators secrets
+    for validator_index in 0..num_validators {
+        let validator_secret =
+            match kub_controller.create_validator_secret(validator_index, &config_directory) {
+                Ok(secret) => secret,
+                Err(err) => {
+                    error!("Failed to create validator secret! {err}");
+                    return;
+                }
+            };
+        match kub_controller.deploy_secret(&validator_secret).await {
+            Ok(_) => (),
+            Err(err) => {
+                error!("{err}");
+                return;
+            }
+        }
+    }
 }
