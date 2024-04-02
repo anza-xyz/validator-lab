@@ -5,18 +5,17 @@ use {
         DEFAULT_MAX_LEDGER_SHREDS, DEFAULT_MIN_MAX_LEDGER_SHREDS,
     },
     solana_sdk::{signature::keypair::read_keypair_file, signer::Signer},
-    std::fs,
+    std::{fs, thread, time::Duration},
     strum::VariantNames,
     validator_lab::{
         docker::{DockerConfig, DockerImage},
         genesis::{Genesis, GenesisFlags},
         kubernetes::{Kubernetes, PodRequests},
         release::{BuildConfig, BuildType, DeployMethod},
-        validator::{Validator, LabelType},
+        validator::{LabelType, Validator},
         validator_config::ValidatorConfig,
         SolanaRoot, ValidatorType,
     },
-    std::{thread, time::Duration},
 };
 
 fn parse_matches() -> clap::ArgMatches {
@@ -488,10 +487,26 @@ async fn main() {
     let identity_path = config_directory.join("bootstrap-validator/identity.json");
     let bootstrap_keypair =
         read_keypair_file(identity_path).expect("Failed to read bootstrap keypair file");
-    bootstrap_validator.add_label("load-balancer/name", "load-balancer-selector", LabelType::ValidatorReplicaSet);
-    bootstrap_validator.add_label("service/name", "bootstrap-validator-selector", LabelType::ValidatorReplicaSet);
-    bootstrap_validator.add_label("validator/type", "bootstrap", LabelType::ValidatorReplicaSet);
-    bootstrap_validator.add_label("validator/identity", bootstrap_keypair.pubkey().to_string(), LabelType::ValidatorReplicaSet);
+    bootstrap_validator.add_label(
+        "load-balancer/name",
+        "load-balancer-selector",
+        LabelType::ValidatorReplicaSet,
+    );
+    bootstrap_validator.add_label(
+        "service/name",
+        "bootstrap-validator-selector",
+        LabelType::ValidatorReplicaSet,
+    );
+    bootstrap_validator.add_label(
+        "validator/type",
+        "bootstrap",
+        LabelType::ValidatorReplicaSet,
+    );
+    bootstrap_validator.add_label(
+        "validator/identity",
+        bootstrap_keypair.pubkey().to_string(),
+        LabelType::ValidatorReplicaSet,
+    );
 
     // create bootstrap replica set
     match kub_controller.create_bootstrap_validator_replica_set(
@@ -522,10 +537,16 @@ async fn main() {
         }
     };
 
-    bootstrap_validator.add_label("service/name", "bootstrap-validator-selector", LabelType::ValidatorReplicaSet);
+    bootstrap_validator.add_label(
+        "service/name",
+        "bootstrap-validator-selector",
+        LabelType::ValidatorService,
+    );
 
-    let bootstrap_service = kub_controller
-        .create_bootstrap_service("bootstrap-validator-service", bootstrap_validator.service_labels());
+    let bootstrap_service = kub_controller.create_bootstrap_service(
+        "bootstrap-validator-service",
+        bootstrap_validator.service_labels(),
+    );
     match kub_controller.deploy_service(&bootstrap_service).await {
         Ok(_) => info!("bootstrap validator service deployed successfully"),
         Err(err) => error!(
@@ -562,7 +583,10 @@ async fn main() {
             Err(_) => panic!("Error occurred while checking replica set readiness"),
         }
     } {
-        info!("replica set: {} not ready...", bootstrap_validator.replica_set_name());
+        info!(
+            "replica set: {} not ready...",
+            bootstrap_validator.replica_set_name()
+        );
         thread::sleep(Duration::from_secs(1));
     }
 }

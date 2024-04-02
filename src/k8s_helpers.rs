@@ -5,8 +5,8 @@ use {
             apps::v1::{ReplicaSet, ReplicaSetSpec},
             core::v1::{
                 Container, EnvVar, PodSecurityContext, PodSpec, PodTemplateSpec, Probe,
-                ResourceRequirements, Secret, Volume, VolumeMount, Service, ServiceSpec,
-                ServicePort,
+                ResourceRequirements, Secret, Service, ServicePort, ServiceSpec, Volume,
+                VolumeMount,
             },
         },
         apimachinery::pkg::{api::resource::Quantity, apis::meta::v1::LabelSelector},
