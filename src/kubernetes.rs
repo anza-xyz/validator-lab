@@ -225,4 +225,34 @@ impl<'a> Kubernetes<'a> {
         // Create the Service object in the cluster
         service_api.create(&post_params, service).await
     }
+
+    pub fn create_validator_load_balancer(
+        &self,
+        service_name: &str,
+        label_selector: &BTreeMap<String, String>,
+    ) -> Service {
+        k8s_helpers::create_service(service_name, self.namespace.as_str(), label_selector, true)
+    }
+
+    pub fn create_selector(&self, key: &str, value: &str) -> BTreeMap<String, String> {
+        k8s_helpers::create_selector(key, value)
+    }
+
+    pub async fn check_replica_set_ready(
+        &self,
+        replica_set_name: &str,
+    ) -> Result<bool, kube::Error> {
+        let replica_sets: Api<ReplicaSet> = Api::namespaced(self.k8s_client.clone(), self.namespace.as_str());
+        let replica_set = replica_sets.get(replica_set_name).await?;
+
+        let desired_validators = replica_set.spec.as_ref().unwrap().replicas.unwrap_or(1);
+        let available_validators = replica_set
+            .status
+            .as_ref()
+            .unwrap()
+            .available_replicas
+            .unwrap_or(0);
+
+        Ok(available_validators >= desired_validators)
+    }
 }
