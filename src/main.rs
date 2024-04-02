@@ -513,4 +513,21 @@ async fn main() {
             return;
         }
     };
+
+    // deploy bootstrap replica set
+    match kub_controller
+            .deploy_replicas_set(bootstrap_validator.replica_set())
+            .await
+        {
+            Ok(_) => {
+                info!(
+                    "{} deployed successfully",
+                    bootstrap_validator.replica_set_name()
+                );
+            }
+            Err(err) => {
+                error!("Error! Failed to deploy bootstrap validator replicas_set. err: {err}");
+                return;
+            }
+        };
 }
