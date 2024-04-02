@@ -54,6 +54,50 @@ pub enum ValidatorType {
     Client,
 }
 
+// impl std::fmt::Display for ValidatorType {
+//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         match *self {
+//             ValidatorType::Bootstrap => write!(f, "bootstrap-validator"),
+//             ValidatorType::Standard => write!(f, "validator"),
+//             ValidatorType::RPC => write!(f, "rpc-node"),
+//             ValidatorType::Client => write!(f, "client"),
+//         }
+//     }
+// }
+
+#[derive(Clone, Debug, Default)]
+pub struct Metrics {
+    pub host: String,
+    pub port: String,
+    pub database: String,
+    pub username: String,
+    password: String,
+}
+
+impl Metrics {
+    pub fn new(
+        host: String,
+        port: String,
+        database: String,
+        username: String,
+        password: String,
+    ) -> Self {
+        Metrics {
+            host,
+            port,
+            database,
+            username,
+            password,
+        }
+    }
+    pub fn to_env_string(&self) -> String {
+        format!(
+            "host={}:{},db={},u={},p={}",
+            self.host, self.port, self.database, self.username, self.password
+        )
+    }
+}
+
 pub mod docker;
 pub mod genesis;
 pub mod k8s_helpers;

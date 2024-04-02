@@ -16,7 +16,7 @@ use {
     std::{collections::BTreeMap, error::Error, path::PathBuf},
 };
 
-fn create_secret(name: &str, data: BTreeMap<String, ByteString>) -> Secret {
+pub fn create_secret(name: &str, data: BTreeMap<String, ByteString>) -> Secret {
     Secret {
         metadata: ObjectMeta {
             name: Some(name.to_string()),

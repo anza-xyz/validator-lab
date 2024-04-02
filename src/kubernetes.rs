@@ -1,14 +1,17 @@
 use {
-    crate::{docker::DockerImage, k8s_helpers, validator_config::ValidatorConfig, ValidatorType},
+    crate::{
+        docker::DockerImage, k8s_helpers, validator_config::ValidatorConfig, Metrics, ValidatorType,
+    },
     k8s_openapi::{
         api::{
             apps::v1::ReplicaSet,
             core::v1::{
-                EnvVar, EnvVarSource, Namespace, ObjectFieldSelector, Secret, SecretVolumeSource,
-                Service, Volume, VolumeMount,
+                EnvVar, EnvVarSource, Namespace, ObjectFieldSelector, Secret, SecretKeySelector,
+                SecretVolumeSource, Service, Volume, VolumeMount,
             },
         },
         apimachinery::pkg::api::resource::Quantity,
+        ByteString,
     },
     kube::{
         api::{Api, ListParams, PostParams},
@@ -42,6 +45,7 @@ pub struct Kubernetes<'a> {
     namespace: String,
     validator_config: &'a mut ValidatorConfig,
     pod_requests: PodRequests,
+    pub metrics: Option<Metrics>,
 }
 
 impl<'a> Kubernetes<'a> {
@@ -49,12 +53,14 @@ impl<'a> Kubernetes<'a> {
         namespace: &str,
         validator_config: &'a mut ValidatorConfig,
         pod_requests: PodRequests,
+        metrics: Option<Metrics>,
     ) -> Kubernetes<'a> {
         Self {
             k8s_client: Client::try_default().await.unwrap(),
             namespace: namespace.to_owned(),
             validator_config,
             pod_requests,
+            metrics,
         }
     }
 
@@ -119,7 +125,7 @@ impl<'a> Kubernetes<'a> {
         secret_name: Option<String>,
         label_selector: &BTreeMap<String, String>,
     ) -> Result<ReplicaSet, Box<dyn Error>> {
-        let env_vars = vec![EnvVar {
+        let mut env_vars = vec![EnvVar {
             name: "MY_POD_IP".to_string(),
             value_from: Some(EnvVarSource {
                 field_ref: Some(ObjectFieldSelector {
@@ -130,6 +136,10 @@ impl<'a> Kubernetes<'a> {
             }),
             ..Default::default()
         }];
+
+        if self.metrics.is_some() {
+            env_vars.push(self.get_metrics_env_var_secret())
+        }
 
         let accounts_volume = Some(vec![Volume {
             name: "bootstrap-accounts-volume".into(),
@@ -256,5 +266,38 @@ impl<'a> Kubernetes<'a> {
             .unwrap_or(0);
 
         Ok(available_validators >= desired_validators)
+    }
+
+    pub fn create_metrics_secret(&self) -> Result<Secret, Box<dyn Error>> {
+        let mut data = BTreeMap::new();
+        if let Some(metrics) = &self.metrics {
+            data.insert(
+                "SOLANA_METRICS_CONFIG".to_string(),
+                ByteString(metrics.to_env_string().into_bytes()),
+            );
+        } else {
+            return Err(
+                "Called create_metrics_secret() but metrics were not provided."
+                    .to_string()
+                    .into(),
+            );
+        }
+
+        Ok(k8s_helpers::create_secret("solana-metrics-secret", data))
+    }
+
+    pub fn get_metrics_env_var_secret(&self) -> EnvVar {
+        EnvVar {
+            name: "SOLANA_METRICS_CONFIG".to_string(),
+            value_from: Some(EnvVarSource {
+                secret_key_ref: Some(SecretKeySelector {
+                    name: Some("solana-metrics-secret".to_string()),
+                    key: "SOLANA_METRICS_CONFIG".to_string(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }
     }
 }
