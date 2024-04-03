@@ -43,7 +43,7 @@ Example:
 ```
 cargo run --bin cluster -- 
     -n <namespace> 
-    --num_validators <number-of-non-bootstrap-voting-validators>
+    --num-validators <number-of-non-bootstrap-voting-validators>
     --deploy-method local
     --local-path /home/sol/solana
     # genesis config. Optional: Many of these have defaults
@@ -61,6 +61,13 @@ cargo run --bin cluster --
     --tag <docker-image-tag>            # e.g. v1
     --base-image <base-image>           # e.g. ubuntu:20.04
     --image-name <docker-image-name>    # e.g. cluster-image
+    # validator config
+    --full-rpc
+    --internal-node-sol <Sol>
+    --internal-node-stake-sol <Sol>
+    # kubernetes config
+    --cpu-requests <cores>
+    --memory-requests <memory>
 ```
 
 ## Metrics

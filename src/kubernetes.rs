@@ -1,7 +1,6 @@
 use {
     crate::{
         docker::DockerImage, k8s_helpers, validator_config::ValidatorConfig, Metrics, ValidatorType,
-        genesis::DEFAULT_INTERNAL_NODE_SOL_TO_STAKE_SOL_RATIO,
     },
     k8s_openapi::{
         api::{
@@ -63,6 +62,10 @@ impl<'a> Kubernetes<'a> {
             pod_requests,
             metrics,
         }
+    }
+
+    pub fn set_shred_version(&mut self, shred_version: u16) {
+        self.validator_config.shred_version = Some(shred_version);
     }
 
     pub async fn namespace_exists(&self) -> Result<bool, kube::Error> {
@@ -185,7 +188,7 @@ impl<'a> Kubernetes<'a> {
         command.extend(self.generate_bootstrap_command_flags());
 
         k8s_helpers::create_replica_set(
-            &ValidatorType::Bootstrap,
+            &ValidatorType::Bootstrap.to_string(),
             self.namespace.as_str(),
             label_selector,
             image_name,
@@ -193,7 +196,6 @@ impl<'a> Kubernetes<'a> {
             &command,
             accounts_volume,
             accounts_volume_mount,
-            None,
             self.pod_requests.requests.clone(),
         )
     }
@@ -377,23 +379,24 @@ impl<'a> Kubernetes<'a> {
         ]
     }
 
-    fn generate_validator_command_flags(&self, validator_stake: &Option<f64>) -> Vec<String> {
+    fn add_known_validators_if_exists(&self, flags: &mut Vec<String>) {
+        if let Some(known_validators) = &self.validator_config.known_validators {
+            for key in known_validators.iter() {
+                flags.push("--known-validator".to_string());
+                flags.push(key.to_string());
+            }
+        }
+    }
+
+    fn generate_validator_command_flags(&self) -> Vec<String> {
         let mut flags: Vec<String> = Vec::new();
         self.generate_command_flags(&mut flags);
 
         flags.push("--internal-node-stake-sol".to_string());
-        if let Some(stake) = validator_stake {
-            flags.push(stake.to_string());
-        } else {
-            flags.push(self.validator_config.internal_node_stake_sol.to_string());
-        }
+        flags.push(self.validator_config.internal_node_stake_sol.to_string());
 
         flags.push("--internal-node-sol".to_string());
-        if let Some(stake) = validator_stake {
-            flags.push((DEFAULT_INTERNAL_NODE_SOL_TO_STAKE_SOL_RATIO * stake).to_string());
-        } else {
-            flags.push(self.validator_config.internal_node_sol.to_string());
-        }
+        flags.push(self.validator_config.internal_node_sol.to_string());
 
         if let Some(shred_version) = self.validator_config.shred_version {
             flags.push("--expected-shred-version".to_string());
@@ -407,12 +410,10 @@ impl<'a> Kubernetes<'a> {
 
     pub fn create_validator_replica_set(
         &mut self,
-        container_name: &str,
-        validator_index: i32,
-        image_name: &str,
+        image: &DockerImage,
         secret_name: Option<String>,
         label_selector: &BTreeMap<String, String>,
-        validator_stake: &Option<f64>,
+        validator_index: usize,
     ) -> Result<ReplicaSet, Box<dyn Error>> {
         let mut env_vars = self.set_non_bootstrap_environment_variables();
         if self.metrics.is_some() {
@@ -437,23 +438,17 @@ impl<'a> Kubernetes<'a> {
 
         let mut command =
             vec!["/home/solana/k8s-cluster-scripts/validator-startup-script.sh".to_string()];
-        command.extend(self.generate_validator_command_flags(validator_stake));
-
-        for c in command.iter() {
-            debug!("validator command: {}", c);
-        }
-
+        command.extend(self.generate_validator_command_flags());
 
         k8s_helpers::create_replica_set(
-            &ValidatorType::Standard,
+            &format!("{}-{validator_index}", ValidatorType::Standard),
             self.namespace.as_str(),
             label_selector,
-            image_name,
+            image,
             env_vars,
             &command,
             accounts_volume,
             accounts_volume_mount,
-            None,
             self.pod_requests.requests.clone(),
         )
     }

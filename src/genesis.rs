@@ -16,7 +16,6 @@ pub const DEFAULT_INTERNAL_NODE_STAKE_SOL: f64 = 1.0;
 pub const DEFAULT_INTERNAL_NODE_SOL: f64 = 10.0;
 pub const DEFAULT_BOOTSTRAP_NODE_STAKE_SOL: f64 = 1.0;
 pub const DEFAULT_BOOTSTRAP_NODE_SOL: f64 = 10.0;
-pub const DEFAULT_INTERNAL_NODE_SOL_TO_STAKE_SOL_RATIO: f64 = 10.0;
 
 fn fetch_spl(fetch_spl_file: &PathBuf) -> Result<(), Box<dyn Error>> {
     let output = Command::new("bash")
