@@ -30,7 +30,7 @@
     - [ ] Client
 - [ ] Create & Deploy Replica Set
     - [x] Bootstrap
-    - [ ] Validator (regular)
+    - [x] Validator (regular)
     - [ ] RPC nodes
     - [ ] Client
 - [ ] Create & Deploy Services
@@ -42,7 +42,7 @@
 - [x] Build and deploy Load Balancer (sits in front of bootstrap and RPC nodes)
 - [ ] Add metrics
     - [x] Bootstrap
-    - [ ] Validator (regular)
+    - [x] Validator (regular)
     - [ ] RPC nodes
     - [ ] Client
 - [ ] Create accounts

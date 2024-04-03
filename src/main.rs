@@ -9,7 +9,7 @@ use {
     strum::VariantNames,
     validator_lab::{
         docker::{DockerConfig, DockerImage},
-        genesis::{Genesis, GenesisFlags},
+        genesis::{Genesis, GenesisFlags, DEFAULT_INTERNAL_NODE_SOL, DEFAULT_INTERNAL_NODE_STAKE_SOL},
         kubernetes::{Kubernetes, PodRequests},
         release::{BuildConfig, BuildType, DeployMethod},
         validator::{LabelType, Validator},
@@ -210,6 +210,18 @@ fn parse_matches() -> clap::ArgMatches {
                 .long("full-rpc")
                 .help("Validator config. Support full RPC services on all nodes"),
         )
+        .arg(
+            Arg::with_name("internal_node_sol")
+                .long("internal-node-sol")
+                .takes_value(true)
+                .help("Amount to fund internal nodes in genesis config."),
+        )
+        .arg(
+            Arg::with_name("internal_node_stake_sol")
+                .long("internal-node-stake-sol")
+                .takes_value(true)
+                .help("Amount to stake internal nodes (Sol)."),
+        )
         // kubernetes config
         .arg(
             Arg::with_name("cpu_requests")
@@ -376,6 +388,18 @@ async fn main() {
     let mut validator_config = ValidatorConfig {
         tpu_enable_udp: matches.is_present("tpu_enable_udp"),
         tpu_disable_quic: matches.is_present("tpu_disable_quic"),
+        internal_node_sol: matches
+            .value_of("internal_node_sol")
+            .unwrap_or(DEFAULT_INTERNAL_NODE_SOL.to_string().as_str())
+            .parse::<f64>()
+            .expect("Invalid value for internal_node_stake_sol") as f64,
+        internal_node_stake_sol: matches
+            .value_of("internal_node_stake_sol")
+            .unwrap_or(DEFAULT_INTERNAL_NODE_STAKE_SOL.to_string().as_str())
+            .parse::<f64>()
+            .expect("Invalid value for internal_node_stake_sol")
+            as f64,
+        shred_version: None, // set after genesis created
         max_ledger_size: if matches.is_present("limit_ledger_size") {
             let limit_ledger_size = match matches.value_of("limit_ledger_size") {
                 Some(_) => value_t_or_exit!(matches, "limit_ledger_size", u64),
@@ -476,6 +500,14 @@ async fn main() {
         Ok(_) => (),
         Err(err) => {
             error!("generate accounts error! {err}");
+            return;
+        }
+    }
+
+    match LedgerHelper::get_shred_version() {
+        Ok(shred_version) => kub_controller.set_shred_version(shred_version),
+        Err(err) => {
+            error!("{}", err);
             return;
         }
     }
@@ -709,5 +741,40 @@ async fn main() {
             validator_keypair.pubkey().to_string(),
             LabelType::ValidatorReplicaSet,
         );
+
+        let validator_replica_set = match kub_controller.create_validator_replica_set(
+            validator_container_name,
+            validator_index,
+            validator_image_name,
+            validator_secret.metadata.name.clone(),
+            &validator_labels,
+            &stake,
+        ) {
+            Ok(replica_set) => replica_set,
+            Err(err) => {
+                error!("Error creating validator replicas_set: {}", err);
+                return;
+            }
+        };
+
+        let _ = match kub_controller
+            .deploy_replicas_set(&validator_replica_set)
+            .await
+        {
+            Ok(rs) => {
+                info!(
+                    "validator replica set ({}) deployed successfully",
+                    validator_index
+                );
+                rs.metadata.name.unwrap()
+            }
+            Err(err) => {
+                error!(
+                    "Error! Failed to deploy validator replica set: {}. err: {:?}",
+                    validator_index, err
+                );
+                return;
+            }
+        };
     }
 }

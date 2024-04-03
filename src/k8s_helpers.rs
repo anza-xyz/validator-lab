@@ -6,7 +6,7 @@ use {
             core::v1::{
                 Container, EnvVar, PodSecurityContext, PodSpec, PodTemplateSpec, Probe,
                 ResourceRequirements, Secret, Service, ServicePort, ServiceSpec, Volume,
-                VolumeMount,
+                VolumeMount, EnvVarSource, ObjectFieldSelector,
             },
         },
         apimachinery::pkg::{api::resource::Quantity, apis::meta::v1::LabelSelector},
@@ -156,4 +156,29 @@ pub fn create_selector(key: &str, value: &str) -> BTreeMap<String, String> {
     let mut btree = BTreeMap::new();
     btree.insert(key.to_string(), value.to_string());
     btree
+}
+
+pub fn create_environment_variable(
+    name: &str,
+    value: Option<String>,
+    field_path: Option<String>,
+) -> EnvVar {
+    match field_path {
+        Some(path) => EnvVar {
+            name: name.to_string(),
+            value_from: Some(EnvVarSource {
+                field_ref: Some(ObjectFieldSelector {
+                    field_path: path,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+        None => EnvVar {
+            name: name.to_string(),
+            value,
+            ..Default::default()
+        },
+    }
 }
