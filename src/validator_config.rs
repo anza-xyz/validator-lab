@@ -3,6 +3,9 @@ use solana_sdk::pubkey::Pubkey;
 pub struct ValidatorConfig {
     pub tpu_enable_udp: bool,
     pub tpu_disable_quic: bool,
+    pub internal_node_sol: f64,
+    pub internal_node_stake_sol: f64,
+    pub shred_version: Option<u16>,
     pub max_ledger_size: Option<u64>,
     pub skip_poh_verify: bool,
     pub no_snapshot_fetch: bool,
@@ -26,6 +29,9 @@ impl std::fmt::Display for ValidatorConfig {
             "Runtime Config\n\
              tpu_enable_udp: {}\n\
              tpu_disable_quic: {}\n\
+             internal_node_sol: {}\n\
+             internal_node_stake_sol: {}\n\
+             shred_version: {:?}\n\
              max_ledger_size: {:?}\n\
              skip_poh_verify: {}\n\
              no_snapshot_fetch: {}\n\
@@ -34,6 +40,9 @@ impl std::fmt::Display for ValidatorConfig {
              known_validators: {:?}",
             self.tpu_enable_udp,
             self.tpu_disable_quic,
+            self.internal_node_sol,
+            self.internal_node_stake_sol,
+            self.shred_version,
             self.max_ledger_size,
             self.skip_poh_verify,
             self.no_snapshot_fetch,

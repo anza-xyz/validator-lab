@@ -7135,6 +7135,7 @@ dependencies = [
  "reqwest",
  "rustc_version",
  "rustls",
+ "solana-accounts-db",
  "solana-core",
  "solana-ledger",
  "solana-logger",

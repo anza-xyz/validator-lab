@@ -102,6 +102,7 @@ pub mod docker;
 pub mod genesis;
 pub mod k8s_helpers;
 pub mod kubernetes;
+pub mod ledger_helper;
 pub mod release;
 pub mod validator;
 pub mod validator_config;
