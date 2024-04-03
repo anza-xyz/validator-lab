@@ -668,22 +668,53 @@ async fn main() {
         thread::sleep(Duration::from_secs(1));
     }
 
-    // Create and deploy validators secrets
+    let mut validator = Validator::new(DockerImage::new(
+        matches.value_of("registry_name").unwrap().to_string(),
+        ValidatorType::Standard,
+        matches.value_of("image_name").unwrap().to_string(),
+        matches
+            .value_of("image_tag")
+            .unwrap_or_default()
+            .to_string(),
+    ));
+
+    // Create and deploy validators secrets/selectors
     for validator_index in 0..num_validators {
-        let validator_secret =
-            match kub_controller.create_validator_secret(validator_index, &config_directory) {
-                Ok(secret) => secret,
-                Err(err) => {
-                    error!("Failed to create validator secret! {err}");
-                    return;
-                }
-            };
-        match kub_controller.deploy_secret(&validator_secret).await {
+        match kub_controller.create_validator_secret(validator_index, &config_directory) {
+            Ok(secret) => validator.set_secret(secret),
+            Err(err) => {
+                error!("Failed to create validator secret! {err}");
+                return;
+            }
+        };
+
+        match kub_controller.deploy_secret(validator.secret()).await {
             Ok(_) => (),
             Err(err) => {
                 error!("{err}");
                 return;
             }
         }
+
+        let identity_path =
+            config_directory.join(format!("validator-identity-{validator_index}.json"));
+        let validator_keypair =
+            read_keypair_file(identity_path).expect("Failed to read validator keypair file");
+
+        validator.add_label(
+            "validator/name",
+            &format!("validator-{}", validator_index),
+            LabelType::ValidatorReplicaSet,
+        );
+        validator.add_label(
+            "validator/type",
+            validator.validator_type().to_string(),
+            LabelType::ValidatorReplicaSet,
+        );
+        validator.add_label(
+            "validator/identity",
+            validator_keypair.pubkey().to_string(),
+            LabelType::ValidatorReplicaSet,
+        );
     }
 }
