@@ -1,12 +1,12 @@
 use {
-    crate::{docker::DockerImage, ValidatorType},
+    crate::docker::DockerImage,
     k8s_openapi::{
         api::{
             apps::v1::{ReplicaSet, ReplicaSetSpec},
             core::v1::{
-                Container, EnvVar, PodSecurityContext, PodSpec, PodTemplateSpec, Probe,
-                ResourceRequirements, Secret, Service, ServicePort, ServiceSpec, Volume,
-                VolumeMount, EnvVarSource, ObjectFieldSelector,
+                Container, EnvVar, EnvVarSource, ObjectFieldSelector, PodSecurityContext, PodSpec,
+                PodTemplateSpec, ResourceRequirements, Secret, Service, ServicePort, ServiceSpec,
+                Volume, VolumeMount,
             },
         },
         apimachinery::pkg::{api::resource::Quantity, apis::meta::v1::LabelSelector},
@@ -43,15 +43,14 @@ pub fn create_secret_from_files(
 
 #[allow(clippy::too_many_arguments)]
 pub fn create_replica_set(
-    name: &ValidatorType,
+    name: &str,
     namespace: &str,
     label_selector: &BTreeMap<String, String>,
-    image_name: &DockerImage,
+    image: &DockerImage,
     environment_variables: Vec<EnvVar>,
     command: &[String],
     volumes: Option<Vec<Volume>>,
     volume_mounts: Option<Vec<VolumeMount>>,
-    readiness_probe: Option<Probe>,
     pod_requests: BTreeMap<String, Quantity>,
 ) -> Result<ReplicaSet, Box<dyn Error>> {
     let pod_spec = PodTemplateSpec {
@@ -61,13 +60,12 @@ pub fn create_replica_set(
         }),
         spec: Some(PodSpec {
             containers: vec![Container {
-                name: format!("{}-{}", image_name.validator_type(), "container"),
-                image: Some(image_name.to_string()),
+                name: format!("{}-{}", image.validator_type(), "container"),
+                image: Some(image.to_string()),
                 image_pull_policy: Some("Always".to_string()),
                 env: Some(environment_variables),
                 command: Some(command.to_owned()),
                 volume_mounts,
-                readiness_probe,
                 resources: Some(ResourceRequirements {
                     requests: Some(pod_requests),
                     ..Default::default()

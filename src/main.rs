@@ -9,8 +9,11 @@ use {
     strum::VariantNames,
     validator_lab::{
         docker::{DockerConfig, DockerImage},
-        genesis::{Genesis, GenesisFlags, DEFAULT_INTERNAL_NODE_SOL, DEFAULT_INTERNAL_NODE_STAKE_SOL},
+        genesis::{
+            Genesis, GenesisFlags, DEFAULT_INTERNAL_NODE_SOL, DEFAULT_INTERNAL_NODE_STAKE_SOL,
+        },
         kubernetes::{Kubernetes, PodRequests},
+        ledger_helper::LedgerHelper,
         release::{BuildConfig, BuildType, DeployMethod},
         validator::{LabelType, Validator},
         validator_config::ValidatorConfig,
@@ -504,7 +507,8 @@ async fn main() {
         }
     }
 
-    match LedgerHelper::get_shred_version() {
+    let ledger_dir = config_directory.join("bootstrap-validator");
+    match LedgerHelper::get_shred_version(&ledger_dir) {
         Ok(shred_version) => kub_controller.set_shred_version(shred_version),
         Err(err) => {
             error!("{}", err);
@@ -732,7 +736,7 @@ async fn main() {
 
         validator.add_label(
             "validator/name",
-            &format!("validator-{}", validator_index),
+            &format!("validator-{validator_index}"),
             LabelType::ValidatorReplicaSet,
         );
         validator.add_label(
@@ -747,16 +751,14 @@ async fn main() {
         );
 
         let validator_replica_set = match kub_controller.create_validator_replica_set(
-            validator_container_name,
+            validator.image(),
+            validator.secret().metadata.name.clone(),
+            validator.replica_set_labels(),
             validator_index,
-            validator_image_name,
-            validator_secret.metadata.name.clone(),
-            &validator_labels,
-            &stake,
         ) {
             Ok(replica_set) => replica_set,
             Err(err) => {
-                error!("Error creating validator replicas_set: {}", err);
+                error!("Error creating validator replicas_set: {err}");
                 return;
             }
         };
@@ -766,16 +768,12 @@ async fn main() {
             .await
         {
             Ok(rs) => {
-                info!(
-                    "validator replica set ({}) deployed successfully",
-                    validator_index
-                );
+                info!("validator replica set ({validator_index}) deployed successfully");
                 rs.metadata.name.unwrap()
             }
             Err(err) => {
                 error!(
-                    "Error! Failed to deploy validator replica set: {}. err: {:?}",
-                    validator_index, err
+                    "Error! Failed to deploy validator replica set: {validator_index}. err: {err}"
                 );
                 return;
             }
