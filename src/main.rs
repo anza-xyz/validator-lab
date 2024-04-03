@@ -133,9 +133,6 @@ fn parse_matches() -> clap::ArgMatches {
             Arg::with_name("docker_build")
                 .long("docker-build")
                 .requires("registry_name")
-                .requires("image_name")
-                .requires("base_image")
-                .requires("image_tag")
                 .help("Build Docker images. Build new docker images"),
         )
         .arg(
@@ -150,7 +147,6 @@ fn parse_matches() -> clap::ArgMatches {
                 .long("image-name")
                 .takes_value(true)
                 .default_value("k8s-cluster-image")
-                .required(true)
                 .help("Docker image name. Will be prepended with validator_type (bootstrap or validator)"),
         )
         .arg(
@@ -158,14 +154,12 @@ fn parse_matches() -> clap::ArgMatches {
                 .long("base-image")
                 .takes_value(true)
                 .default_value("ubuntu:20.04")
-                .required(true)
                 .help("Docker base image"),
         )
         .arg(
             Arg::with_name("image_tag")
                 .long("tag")
                 .takes_value(true)
-                .required(true)
                 .default_value("latest")
                 .help("Docker image tag."),
         )
@@ -523,26 +517,36 @@ async fn main() {
             .to_string(),
     ));
 
+    //TODO do not parse twice
+    let mut validator = Validator::new(DockerImage::new(
+        matches.value_of("registry_name").unwrap().to_string(),
+        ValidatorType::Standard,
+        matches.value_of("image_name").unwrap().to_string(),
+        matches
+            .value_of("image_tag")
+            .unwrap_or_default()
+            .to_string(),
+    ));
+
     if build_config.docker_build() {
-        match docker.build_image(solana_root.get_root_path(), bootstrap_validator.image()) {
-            Ok(_) => info!(
-                "{} image built successfully",
-                bootstrap_validator.validator_type()
-            ),
-            Err(err) => {
-                error!("Exiting........ {err}");
-                return;
+        let validators = vec![&bootstrap_validator, &validator];
+        for v in &validators {
+            match docker.build_image(solana_root.get_root_path(), v.image()) {
+                Ok(_) => info!("{} image built successfully", v.validator_type()),
+                Err(err) => {
+                    error!("Exiting........ {err}");
+                    return;
+                }
             }
         }
 
-        match DockerConfig::push_image(bootstrap_validator.image()) {
-            Ok(_) => info!(
-                "{} image pushed successfully",
-                bootstrap_validator.validator_type()
-            ),
-            Err(err) => {
-                error!("Exiting........ {err}");
-                return;
+        for v in &validators {
+            match DockerConfig::push_image(v.image()) {
+                Ok(_) => info!("{} image pushed successfully", v.validator_type()),
+                Err(err) => {
+                    error!("Exiting........ {err}");
+                    return;
+                }
             }
         }
     }
@@ -666,16 +670,6 @@ async fn main() {
         );
         thread::sleep(Duration::from_secs(1));
     }
-
-    let mut validator = Validator::new(DockerImage::new(
-        matches.value_of("registry_name").unwrap().to_string(),
-        ValidatorType::Standard,
-        matches.value_of("image_name").unwrap().to_string(),
-        matches
-            .value_of("image_tag")
-            .unwrap_or_default()
-            .to_string(),
-    ));
 
     // Create and deploy validators secrets/selectors
     for validator_index in 0..num_validators {

@@ -56,7 +56,7 @@ cargo run --bin cluster --
     --target-lamports-per-signature <lamports-per-signature>
     --slots-per-epoch <slots-per-epoch>
     # docker config
-    --registry <docker-registry>        # e.g. gregcusack 
+    --registry <docker-registry>        # e.g. gregregistry
     --docker-build
     --tag <docker-image-tag>            # e.g. v1
     --base-image <base-image>           # e.g. ubuntu:20.04
