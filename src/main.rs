@@ -525,24 +525,6 @@ async fn main() {
         deploy_method,
     );
 
-    // metrics secret create once and use by all pods
-    if kub_controller.metrics.is_some() {
-        let metrics_secret = match kub_controller.create_metrics_secret() {
-            Ok(secret) => secret,
-            Err(err) => {
-                error!("Failed to create metrics secret! {err}");
-                return;
-            }
-        };
-        match kub_controller.deploy_secret(&metrics_secret).await {
-            Ok(_) => (),
-            Err(err) => {
-                error!("{err}");
-                return;
-            }
-        }
-    };
-
     let mut bootstrap_validator = Validator::new(DockerImage::new(
         matches.value_of("registry_name").unwrap().to_string(),
         ValidatorType::Bootstrap,
@@ -586,6 +568,24 @@ async fn main() {
             }
         }
     }
+
+    // metrics secret create once and use by all pods
+    if kub_controller.metrics.is_some() {
+        let metrics_secret = match kub_controller.create_metrics_secret() {
+            Ok(secret) => secret,
+            Err(err) => {
+                error!("Failed to create metrics secret! {err}");
+                return;
+            }
+        };
+        match kub_controller.deploy_secret(&metrics_secret).await {
+            Ok(_) => (),
+            Err(err) => {
+                error!("{err}");
+                return;
+            }
+        }
+    };
 
     match kub_controller.create_bootstrap_secret("bootstrap-accounts-secret", &config_directory) {
         Ok(secret) => bootstrap_validator.set_secret(secret),

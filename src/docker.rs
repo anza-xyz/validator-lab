@@ -154,10 +154,15 @@ impl DockerConfig {
         fs::create_dir_all(&docker_path)?;
 
         if let DeployMethod::Local(_) = self.deploy_method {
-            if validator_type == &ValidatorType::Bootstrap {
+            if validator_type == &ValidatorType::Bootstrap
+                || validator_type == &ValidatorType::Standard
+            {
                 let manifest_path =
                     PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("$CARGO_MANIFEST_DIR"));
-                let files_to_copy = ["bootstrap-startup-script.sh", "common.sh"];
+                let files_to_copy = [
+                    format!("{validator_type}-startup-script.sh"),
+                    "common.sh".to_string(),
+                ];
                 for file_name in files_to_copy.iter() {
                     Self::copy_file_to_docker(&manifest_path, &docker_path, file_name)?;
                 }
