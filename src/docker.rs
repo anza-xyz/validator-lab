@@ -70,8 +70,8 @@ impl DockerConfig {
     ) -> Result<(), Box<dyn Error>> {
         let validator_type = docker_image.validator_type();
         match validator_type {
-            ValidatorType::Bootstrap => (),
-            ValidatorType::Standard | ValidatorType::RPC | ValidatorType::Client => {
+            ValidatorType::Bootstrap | ValidatorType::Standard => (),
+            ValidatorType::RPC | ValidatorType::Client => {
                 return Err(format!(
                     "Build docker image for validator type: {validator_type} not supported yet"
                 )
@@ -106,7 +106,7 @@ impl DockerConfig {
         let context_path = solana_root_path.display().to_string();
 
         let progress_bar = new_spinner_progress_bar();
-        progress_bar.set_message(format!("{BUILD}Building {validator_type} docker image...",));
+        progress_bar.set_message(format!("{BUILD}Building {validator_type} docker image..."));
 
         let command = format!("docker build -t {docker_image} -f {dockerfile:?} {context_path}");
 
