@@ -1,50 +1,51 @@
 use {
-    clap::{crate_description, crate_name, App, Arg, ArgMatches},
+    clap::{command, Arg, ArgGroup},
     log::*,
     std::fs,
+    strum::VariantNames,
     validator_lab::{
         kubernetes::Kubernetes,
-        release::{BuildConfig, DeployMethod},
+        release::{BuildConfig, BuildType, DeployMethod},
         SolanaRoot,
     },
 };
 
-fn parse_matches() -> ArgMatches<'static> {
-    App::new(crate_name!())
-        .about(crate_description!())
+fn parse_matches() -> clap::ArgMatches {
+    command!()
         .arg(
-            Arg::with_name("cluster_namespace")
+            Arg::new("cluster_namespace")
                 .long("namespace")
-                .short("n")
+                .short('n')
                 .takes_value(true)
                 .default_value("default")
                 .help("namespace to deploy test cluster"),
         )
         .arg(
-            Arg::with_name("deploy_method")
-                .long("deploy-method")
-                .takes_value(true)
-                .possible_values(&["local", "tar", "skip"])
-                .default_value("local")
-                .help("Deploy method. tar, local, skip. [default: local]"),
-        )
-        .arg(
-            Arg::with_name("local-path")
+            Arg::new("local_path")
                 .long("local-path")
                 .takes_value(true)
-                .required_if("deploy-method", "local")
-                .conflicts_with_all(&["tar", "skip"])
-                .help("Path to local agave repo. Required for 'local' deploy method."),
+                .conflicts_with("release_channel")
+                .help("Build validator from local Agave repo. Specify path here."),
         )
         .arg(
-            Arg::with_name("skip_build")
-                .long("skip-build")
-                .help("Disable building for building from local repo"),
+            Arg::new("build_type")
+                .long("build-type")
+                .takes_value(true)
+                .possible_values(BuildType::VARIANTS)
+                .default_value(BuildType::Release.into())
+                .help("Specifies the build type: skip, debug, or release."),
         )
         .arg(
-            Arg::with_name("debug_build")
-                .long("debug-build")
-                .help("Enable debug build"),
+            Arg::with_name("release_channel")
+                .long("release-channel")
+                .takes_value(true)
+                .conflicts_with("local_path")
+                .help("Pulls specific release version. e.g. v1.17.2"),
+        )
+        .group(
+            ArgGroup::new("required_group")
+                .args(&["local_path", "release_channel"])
+                .required(true),
         )
         .get_matches()
 }
@@ -65,25 +66,22 @@ async fn main() {
         namespace: matches.value_of("cluster_namespace").unwrap_or_default(),
     };
 
-    let deploy_method = matches.value_of("deploy_method").unwrap();
-    let local_path = matches.value_of("local-path");
-    match deploy_method {
-        method if method == DeployMethod::Local.to_string() => {
-            if local_path.is_none() {
-                panic!("Error: --local-path is required for 'local' deploy-method.");
-            }
-        }
-        _ => {
-            if local_path.is_some() {
-                warn!("WARN: --local-path <path> will be ignored");
-            }
-        }
-    }
-
-    let solana_root = match matches.value_of("local-path") {
-        Some(path) => SolanaRoot::new_from_path(path.into()),
-        None => SolanaRoot::default(),
+    let deploy_method = if let Some(local_path) = matches.value_of("local_path") {
+        DeployMethod::Local(local_path.to_owned())
+    } else if let Some(release_channel) = matches.value_of("release_channel") {
+        DeployMethod::ReleaseChannel(release_channel.to_owned())
+    } else {
+        unreachable!("One of --local-path or --release-channel must be provided.");
     };
+
+    let solana_root = match &deploy_method {
+        DeployMethod::Local(path) => SolanaRoot::new_from_path(path.into()),
+        DeployMethod::ReleaseChannel(_) => SolanaRoot::default(),
+    };
+
+    let build_type: BuildType = matches
+        .value_of_t("build_type")
+        .unwrap_or_else(|e| e.exit());
 
     if let Ok(metadata) = fs::metadata(solana_root.get_root_path()) {
         if !metadata.is_dir() {
@@ -115,15 +113,10 @@ async fn main() {
         }
     }
 
-    let build_config = BuildConfig::new(
-        deploy_method,
-        matches.is_present("skip_build"),
-        matches.is_present("debug_build"),
-        &solana_root.get_root_path(),
-    )
-    .unwrap_or_else(|err| {
-        panic!("Error creating BuildConfig: {}", err);
-    });
+    let build_config = BuildConfig::new(deploy_method, build_type, &solana_root.get_root_path())
+        .unwrap_or_else(|err| {
+            panic!("Error creating BuildConfig: {}", err);
+        });
 
     match build_config.prepare().await {
         Ok(_) => info!("Validator setup prepared successfully"),

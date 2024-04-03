@@ -1,102 +1,101 @@
 use {
-    crate::boxed_error,
+    crate::{cat_file, download_to_temp, extract_release_archive},
     git2::Repository,
     log::*,
-    std::{error::Error, fmt::Display, path::PathBuf, str::FromStr, time::Instant},
+    std::{error::Error, fs, path::PathBuf, time::Instant},
+    strum_macros::{EnumString, IntoStaticStr, VariantNames},
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum DeployMethod {
-    Local,
-    Tar,
-    Skip,
+    Local(String),
+    ReleaseChannel(String),
 }
 
-impl Display for DeployMethod {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            DeployMethod::Local => write!(f, "local"),
-            DeployMethod::Tar => write!(f, "tar"),
-            DeployMethod::Skip => write!(f, "skip"),
-        }
-    }
-}
-
-impl FromStr for DeployMethod {
-    type Err = ();
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "local" => Ok(DeployMethod::Local),
-            "tar" => Ok(DeployMethod::Tar),
-            "skip" => Ok(DeployMethod::Skip),
-            _ => Err(()),
-        }
-    }
+#[derive(PartialEq, EnumString, IntoStaticStr, VariantNames)]
+#[strum(serialize_all = "lowercase")]
+pub enum BuildType {
+    Skip, // use Agave build from the previous run
+    Debug,
+    Release,
 }
 
 pub struct BuildConfig {
     deploy_method: DeployMethod,
-    skip_build: bool,
-    debug_build: bool,
+    build_type: BuildType,
     _build_path: PathBuf,
     solana_root_path: PathBuf,
 }
 
 impl BuildConfig {
     pub fn new(
-        deploy_method: &str,
-        skip_build: bool,
-        debug_build: bool,
+        deploy_method: DeployMethod,
+        build_type: BuildType,
         solana_root_path: &PathBuf,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let deploy_method = deploy_method
-            .parse::<DeployMethod>()
-            .map_err(|_| "Failed to parse deploy_method".to_string())?;
-
         let build_path = match deploy_method {
-            DeployMethod::Local => solana_root_path.join("farf/bin"),
-            DeployMethod::Tar => solana_root_path.join("solana-release/bin"),
-            DeployMethod::Skip => solana_root_path.join("farf/bin"),
+            DeployMethod::Local(_) => solana_root_path.join("farf/bin"),
+            DeployMethod::ReleaseChannel(_) => solana_root_path.join("solana-release/bin"),
         };
 
         Ok(BuildConfig {
             deploy_method,
-            skip_build,
-            debug_build,
+            build_type,
             _build_path: build_path,
             solana_root_path: solana_root_path.clone(),
         })
     }
 
     pub async fn prepare(&self) -> Result<(), Box<dyn Error>> {
-        match self.deploy_method {
-            DeployMethod::Tar => {
-                return Err(boxed_error!("Tar deploy method not implemented yet."));
-            }
-            DeployMethod::Local => {
+        match &self.deploy_method {
+            DeployMethod::ReleaseChannel(channel) => match self.setup_tar_deploy(channel).await {
+                Ok(tar_directory) => {
+                    info!("Successfully setup tar file");
+                    cat_file(&tar_directory.join("version.yml")).unwrap();
+                }
+                Err(err) => return Err(err),
+            },
+            DeployMethod::Local(_) => {
                 self.setup_local_deploy()?;
-            }
-            DeployMethod::Skip => {
-                return Err(boxed_error!("Skip deploy method not implemented yet."));
             }
         }
         info!("Completed Prepare Deploy");
         Ok(())
     }
 
+    async fn setup_tar_deploy(&self, release_channel: &String) -> Result<PathBuf, Box<dyn Error>> {
+        let file_name = "solana-release";
+        let tar_filename = format!("{file_name}.tar.bz2");
+        info!("tar file: {}", tar_filename);
+        self.download_release_from_channel(&tar_filename, release_channel)
+            .await?;
+
+        // Extract it and load the release version metadata
+        let tarball_filename = self.solana_root_path.join(&tar_filename);
+        let release_dir = self.solana_root_path.join(file_name);
+        extract_release_archive(&tarball_filename, &self.solana_root_path).map_err(|err| {
+            format!("Unable to extract {tar_filename} into {release_dir:?}: {err}")
+        })?;
+
+        Ok(release_dir)
+    }
+
     fn setup_local_deploy(&self) -> Result<(), Box<dyn Error>> {
-        if !self.skip_build {
+        if self.build_type != BuildType::Skip {
             self.build()?;
         } else {
-            info!("Build skipped due to --skip-build");
+            info!("Build skipped due to --build-type skip");
         }
         Ok(())
     }
 
     fn build(&self) -> Result<(), Box<dyn Error>> {
         let start_time = Instant::now();
-        let build_variant = if self.debug_build { "--debug" } else { "" };
+        let build_variant = if self.build_type == BuildType::Debug {
+            "--debug"
+        } else {
+            ""
+        };
 
         let install_directory = self.solana_root_path.join("farf");
         let install_script = self.solana_root_path.join("scripts/cargo-install-all.sh");
@@ -110,7 +109,7 @@ impl BuildConfig {
                 if result.success() {
                     info!("Successfully built validator")
                 } else {
-                    return Err(boxed_error!("Failed to build validator"));
+                    return Err("Failed to build validator".into());
                 }
             }
             Err(err) => return Err(Box::new(err)),
@@ -143,6 +142,39 @@ impl BuildConfig {
             .expect("Failed to write version.yml");
 
         info!("Build took {:.3?} seconds", start_time.elapsed());
+        Ok(())
+    }
+
+    async fn download_release_from_channel(
+        &self,
+        tar_filename: &str,
+        release_channel: &String,
+    ) -> Result<(), Box<dyn Error>> {
+        info!("Downloading release from channel: {}", release_channel);
+        let file_path = self.solana_root_path.join(tar_filename);
+        // Remove file
+        if let Err(err) = fs::remove_file(&file_path) {
+            if err.kind() != std::io::ErrorKind::NotFound {
+                return Err(format!("{}: {:?}", "Error while removing file:", err).into());
+            }
+        }
+
+        let download_url = format!(
+            "{}{}{}",
+            "https://release.solana.com/",
+            release_channel,
+            "/solana-release-x86_64-unknown-linux-gnu.tar.bz2"
+        );
+        info!("download_url: {}", download_url);
+
+        download_to_temp(
+            download_url.as_str(),
+            tar_filename,
+            self.solana_root_path.clone(),
+        )
+        .await
+        .map_err(|err| format!("Unable to download {download_url}. Error: {err}"))?;
+
         Ok(())
     }
 }

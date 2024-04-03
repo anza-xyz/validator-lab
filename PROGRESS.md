@@ -9,9 +9,9 @@
 
 ## Steps
 - [x] Connect to kubernetes endpoint and check if namespace exists
-- [ ] Setup build config Local
+- [x] Setup build config Local
     - [x] Build from local commit
-    - [ ] Build from tar (release version)
+    - [x] Build from tar (release version)
 - [ ] Create Genesis
     - [ ] Generate faucet and bootstrap accounts
     - [ ] Build genesis
