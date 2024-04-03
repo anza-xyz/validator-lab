@@ -37,8 +37,8 @@ impl SolanaRoot {
         Self { root_path: path }
     }
 
-    pub fn get_root_path(&self) -> PathBuf {
-        self.root_path.clone()
+    pub fn get_root_path(&self) -> &PathBuf {
+        &self.root_path
     }
 }
 

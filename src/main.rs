@@ -105,14 +105,14 @@ async fn main() {
             return;
         }
         Err(err) => {
-            error!("Error: {}", err);
+            error!("Error: {err}");
             return;
         }
     }
 
-    let build_config = BuildConfig::new(deploy_method, build_type, &solana_root.get_root_path())
+    let build_config = BuildConfig::new(deploy_method, build_type, solana_root.get_root_path())
         .unwrap_or_else(|err| {
-            panic!("Error creating BuildConfig: {}", err);
+            panic!("Error creating BuildConfig: {err}");
         });
 
     match build_config.prepare().await {
@@ -128,7 +128,7 @@ async fn main() {
     match genesis.generate_faucet() {
         Ok(_) => (),
         Err(err) => {
-            error!("generate faucet error! {}", err);
+            error!("generate faucet error! {err}");
             return;
         }
     }
@@ -136,7 +136,7 @@ async fn main() {
     match genesis.generate_accounts(ValidatorType::Bootstrap, 1) {
         Ok(_) => (),
         Err(err) => {
-            error!("generate accounts error! {}", err);
+            error!("generate accounts error! {err}");
             return;
         }
     }

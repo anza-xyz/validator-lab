@@ -13,7 +13,7 @@ pub struct Genesis {
 }
 
 impl Genesis {
-    pub fn new(solana_root: PathBuf) -> Self {
+    pub fn new(solana_root: &PathBuf) -> Self {
         let config_dir = solana_root.join("config-k8s");
         if config_dir.exists() {
             std::fs::remove_dir_all(&config_dir).unwrap();
@@ -46,10 +46,7 @@ impl Genesis {
             return Err("Client valdiator_type in generate_accounts not allowed".into());
         }
 
-        info!(
-            "generating {} {} accounts...",
-            number_of_accounts, validator_type
-        );
+        info!("generating {number_of_accounts} {validator_type} accounts...");
 
         let mut account_types = vec!["identity", "stake-account", "vote-account"];
         match validator_type {
@@ -65,29 +62,26 @@ impl Genesis {
             .key_generator
             .gen_n_keypairs(total_accounts_to_generate as u64);
 
-        self.write_accounts_to_file(validator_type, account_types, keypairs)?;
+        self.write_accounts_to_file(&validator_type, &account_types, &keypairs)?;
 
         Ok(())
     }
 
     fn write_accounts_to_file(
         &self,
-        validator_type: ValidatorType,
-        account_types: Vec<&str>,
-        keypairs: Vec<Keypair>, //TODO: reference this
+        validator_type: &ValidatorType,
+        account_types: &Vec<&str>,
+        keypairs: &Vec<Keypair>,
     ) -> Result<(), Box<dyn Error>> {
         for (i, keypair) in keypairs.iter().enumerate() {
             let account_index = i / account_types.len();
             let account = account_types[i % account_types.len()];
             let filename = match validator_type {
                 ValidatorType::Bootstrap => {
-                    format!("{}/{}.json", validator_type, account)
+                    format!("{validator_type}/{account}.json")
                 }
-                ValidatorType::Standard => {
-                    format!("{}-{}-{}.json", validator_type, account, account_index)
-                }
-                ValidatorType::RPC => {
-                    format!("{}-{}-{}.json", validator_type, account, account_index)
+                ValidatorType::Standard | ValidatorType::RPC => {
+                    format!("{validator_type}-{account}-{account_index}.json")
                 }
                 ValidatorType::Client => panic!("Client type not supported"),
             };
