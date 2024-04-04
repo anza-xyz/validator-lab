@@ -70,6 +70,12 @@ cargo run --bin cluster --
     --memory-requests <memory>
 ```
 
+#### RPC Nodes
+You can add in RPC nodes. These sit behind a load balancer. Load balancer distributed loads across all RPC nodes that the bootstrap. Set the number of RPC nodes with:
+```
+--num-rpc-nodes <num-nodes>
+```
+
 ## Metrics
 1) Setup metrics database:
 ```

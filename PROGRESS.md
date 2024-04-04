@@ -49,7 +49,7 @@
     - [ ] Client
 - [ ] Create accounts
     - [x] Validator (regular)
-    - [ ] RPC
+    - [x] RPC
     - [ ] Client
 - [ ] Add feature flags to configure:
     - [ ] Bootstrap

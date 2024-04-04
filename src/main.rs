@@ -225,6 +225,18 @@ fn parse_matches() -> clap::ArgMatches {
                 .takes_value(true)
                 .help("Amount to stake internal nodes (Sol)."),
         )
+        //RPC config
+        .arg(
+            Arg::with_name("number_of_rpc_nodes")
+                .long("num-rpc-nodes")
+                .takes_value(true)
+                .default_value("0")
+                .help("Number of rpc nodes")
+                .validator(|s| match s.parse::<i32>() {
+                    Ok(n) if n >= 0 => Ok(()),
+                    _ => Err(String::from("number_of_rpc_nodes should be >= 0")),
+                }),
+        )
         // kubernetes config
         .arg(
             Arg::with_name("cpu_requests")
@@ -296,6 +308,7 @@ async fn main() {
     };
 
     let num_validators = value_t_or_exit!(matches, "number_of_validators", usize);
+    let num_rpc_nodes = value_t_or_exit!(matches, "number_of_rpc_nodes", usize);
 
     let deploy_method = if let Some(local_path) = matches.value_of("local_path") {
         DeployMethod::Local(local_path.to_owned())
@@ -507,11 +520,19 @@ async fn main() {
         }
     }
 
+    match genesis.generate_accounts(ValidatorType::RPC, num_rpc_nodes) {
+        Ok(_) => (),
+        Err(err) => {
+            error!("generate non voting accounts error! {err}");
+            return;
+        }
+    }
+
     let ledger_dir = config_directory.join("bootstrap-validator");
     match LedgerHelper::get_shred_version(&ledger_dir) {
         Ok(shred_version) => kub_controller.set_shred_version(shred_version),
         Err(err) => {
-            error!("{}", err);
+            error!("{err}");
             return;
         }
     }
