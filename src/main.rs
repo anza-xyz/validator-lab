@@ -755,6 +755,34 @@ async fn main() {
                     return;
                 }
             }
+            let identity_path =
+                config_directory.join(format!("rpc-node-identity-{rpc_index}.json"));
+            let rpc_keypair =
+                read_keypair_file(identity_path).expect("Failed to read rpc-node keypair file");
+
+            rpc_node.add_label(
+                "rpc-node/name",
+                &format!("rpc-node-{rpc_index}"),
+                LabelType::ValidatorReplicaSet,
+            );
+
+            rpc_node.add_label(
+                "rpc-node/type",
+                rpc_node.validator_type().to_string(),
+                LabelType::ValidatorReplicaSet,
+            );
+
+            rpc_node.add_label(
+                "rpc-node/identity",
+                rpc_keypair.pubkey().to_string(),
+                LabelType::ValidatorReplicaSet,
+            );
+
+            rpc_node.add_label(
+                "load-balancer/name",
+                "load-balancer-selector",
+                LabelType::ValidatorReplicaSet,
+            );
         }
     }
 
