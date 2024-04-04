@@ -1,4 +1,4 @@
-# source this file
+#!/usr/bin/env bash
 
 readCargoVariable() {
   declare variable="$1"
