@@ -58,6 +58,10 @@ impl BuildConfig {
     }
 
     pub async fn prepare(&self) -> Result<(), Box<dyn Error>> {
+        if self.build_type == BuildType::Skip {
+            info!("skipping build");
+            return Ok(());
+        }
         match &self.deploy_method {
             DeployMethod::ReleaseChannel(channel) => match self.setup_tar_deploy(channel).await {
                 Ok(tar_directory) => {
@@ -77,7 +81,7 @@ impl BuildConfig {
     async fn setup_tar_deploy(&self, release_channel: &String) -> Result<PathBuf, Box<dyn Error>> {
         let file_name = "solana-release";
         let tar_filename = format!("{file_name}.tar.bz2");
-        info!("tar file: {}", tar_filename);
+        info!("tar file: {tar_filename}");
         self.download_release_from_channel(&tar_filename, release_channel)
             .await?;
 
@@ -92,11 +96,7 @@ impl BuildConfig {
     }
 
     fn setup_local_deploy(&self) -> Result<(), Box<dyn Error>> {
-        if self.build_type != BuildType::Skip {
-            self.build()?;
-        } else {
-            info!("Build skipped due to --build-type skip");
-        }
+        self.build()?;
         Ok(())
     }
 

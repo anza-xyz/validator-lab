@@ -774,5 +774,17 @@ async fn main() {
                 return;
             }
         };
+
+        // let service_name = format!("validator-service-{index}");
+        let validator_service = kub_controller.create_validator_service(
+            &format!("validator-service-{validator_index}"),
+            validator.replica_set_labels(),
+        );
+        match kub_controller.deploy_service(&validator_service).await {
+            Ok(_) => info!("validator service ({validator_index}) deployed successfully"),
+            Err(err) => {
+                error!("Error! Failed to deploy validator service: {validator_index}. err: {err}")
+            }
+        }
     }
 }
