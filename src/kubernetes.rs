@@ -111,7 +111,7 @@ impl<'a> Kubernetes<'a> {
         validator_index: usize,
         config_dir: &PathBuf,
     ) -> Result<Secret, Box<dyn Error>> {
-        let secret_name = format!("validator-accounts-secret-{}", validator_index);
+        let secret_name = format!("validator-accounts-secret-{validator_index}");
 
         let accounts = ["identity", "vote", "stake"];
         let key_files: Vec<(PathBuf, &str)> = accounts
@@ -460,5 +460,23 @@ impl<'a> Kubernetes<'a> {
         label_selector: &BTreeMap<String, String>,
     ) -> Service {
         k8s_helpers::create_service(service_name, self.namespace.as_str(), label_selector, false)
+    }
+
+    pub fn create_rpc_secret(
+        &self,
+        rpc_index: usize,
+        config_dir: &PathBuf,
+    ) -> Result<Secret, Box<dyn Error>> {
+        let secret_name = format!("rpc-node-account-secret-{rpc_index}");
+
+        let key_files = vec![
+            (
+                config_dir.join(format!("rpc-node-identity-{rpc_index}.json")),
+                "identity",
+            ),
+            (config_dir.join("faucet.json"), "faucet"),
+        ];
+
+        k8s_helpers::create_secret_from_files(&secret_name, &key_files)
     }
 }

@@ -567,6 +567,17 @@ async fn main() {
             .to_string(),
     ));
 
+    //TODO do not parse thrice
+    let mut rpc_node = Validator::new(DockerImage::new(
+        matches.value_of("registry_name").unwrap().to_string(),
+        ValidatorType::Standard,
+        matches.value_of("image_name").unwrap().to_string(),
+        matches
+            .value_of("image_tag")
+            .unwrap_or_default()
+            .to_string(),
+    ));
+
     if build_config.docker_build() {
         let validators = vec![&bootstrap_validator, &validator];
         for v in &validators {
@@ -728,6 +739,25 @@ async fn main() {
         thread::sleep(Duration::from_secs(1));
     }
 
+    if num_rpc_nodes > 0 {
+        for rpc_index in 0..num_rpc_nodes {
+            match kub_controller.create_rpc_secret(rpc_index, &config_directory) {
+                Ok(secret) => rpc_node.set_secret(secret),
+                Err(err) => {
+                    error!("Failed to create RPC node {rpc_index} secret! {err}");
+                    return;
+                }
+            }
+            match kub_controller.deploy_secret(&rpc_node.secret()).await {
+                Ok(_) => info!("Deployed RPC node {rpc_index} Secret"),
+                Err(err) => {
+                    error!("{err}");
+                    return;
+                }
+            }
+        }
+    }
+
     // Create and deploy validators secrets/selectors
     for validator_index in 0..num_validators {
         match kub_controller.create_validator_secret(validator_index, &config_directory) {
@@ -739,7 +769,7 @@ async fn main() {
         };
 
         match kub_controller.deploy_secret(&validator.secret()).await {
-            Ok(_) => (),
+            Ok(_) => info!("Deployed validator {validator_index} secret"),
             Err(err) => {
                 error!("{err}");
                 return;
