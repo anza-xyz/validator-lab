@@ -14,6 +14,9 @@ jobs:
       - name: "Checkout"
         uses: actions/checkout@v4
 
+      - name: "Setup Protobuf Compiler"
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
       - name: "Fmt"
         run: |
           .github/scripts/cargo-fmt.sh

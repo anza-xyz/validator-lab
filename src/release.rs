@@ -2,7 +2,12 @@ use {
     crate::{cat_file, download_to_temp, extract_release_archive},
     git2::Repository,
     log::*,
-    std::{error::Error, fs, path::PathBuf, time::Instant},
+    std::{
+        error::Error,
+        fs,
+        path::{Path, PathBuf},
+        time::Instant,
+    },
     strum_macros::{EnumString, IntoStaticStr, VariantNames},
 };
 
@@ -31,7 +36,7 @@ impl BuildConfig {
     pub fn new(
         deploy_method: DeployMethod,
         build_type: BuildType,
-        solana_root_path: &PathBuf,
+        solana_root_path: &Path,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let build_path = match deploy_method {
             DeployMethod::Local(_) => solana_root_path.join("farf/bin"),
@@ -42,7 +47,7 @@ impl BuildConfig {
             deploy_method,
             build_type,
             _build_path: build_path,
-            solana_root_path: solana_root_path.clone(),
+            solana_root_path: solana_root_path.to_path_buf(),
         })
     }
 

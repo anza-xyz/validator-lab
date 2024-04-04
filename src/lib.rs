@@ -11,6 +11,7 @@ use {
         path::{Path, PathBuf},
         time::Duration,
     },
+    strum_macros::Display,
     tar::Archive,
     url::Url,
 };
@@ -36,11 +37,24 @@ impl SolanaRoot {
         Self { root_path: path }
     }
 
-    pub fn get_root_path(&self) -> PathBuf {
-        self.root_path.clone()
+    pub fn get_root_path(&self) -> &PathBuf {
+        &self.root_path
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Display)]
+pub enum ValidatorType {
+    #[strum(serialize = "bootstrap-validator")]
+    Bootstrap,
+    #[strum(serialize = "validator")]
+    Standard,
+    #[strum(serialize = "rpc-node")]
+    RPC,
+    #[strum(serialize = "client")]
+    Client,
+}
+
+pub mod genesis;
 pub mod kubernetes;
 pub mod release;
 
