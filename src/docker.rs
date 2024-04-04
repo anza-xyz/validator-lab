@@ -70,8 +70,8 @@ impl DockerConfig {
     ) -> Result<(), Box<dyn Error>> {
         let validator_type = docker_image.validator_type();
         match validator_type {
-            ValidatorType::Bootstrap | ValidatorType::Standard => (),
-            ValidatorType::RPC | ValidatorType::Client => {
+            ValidatorType::Bootstrap | ValidatorType::Standard | ValidatorType::RPC => (),
+            ValidatorType::Client => {
                 return Err(format!(
                     "Build docker image for validator type: {validator_type} not supported yet"
                 )
@@ -154,18 +154,15 @@ impl DockerConfig {
         fs::create_dir_all(&docker_path)?;
 
         if let DeployMethod::Local(_) = self.deploy_method {
-            if validator_type == &ValidatorType::Bootstrap
-                || validator_type == &ValidatorType::Standard
-            {
-                let manifest_path =
-                    PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("$CARGO_MANIFEST_DIR"));
-                let files_to_copy = [
-                    format!("{validator_type}-startup-script.sh"),
-                    "common.sh".to_string(),
-                ];
-                for file_name in files_to_copy.iter() {
-                    Self::copy_file_to_docker(&manifest_path, &docker_path, file_name)?;
-                }
+            // Copy startup scripts into build directory
+            let manifest_path =
+                PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("$CARGO_MANIFEST_DIR"));
+            let files_to_copy = [
+                format!("{validator_type}-startup-script.sh"),
+                "common.sh".to_string(),
+            ];
+            for file_name in files_to_copy.iter() {
+                Self::copy_file_to_docker(&manifest_path, &docker_path, file_name)?;
             }
         }
 
@@ -173,7 +170,7 @@ impl DockerConfig {
             if let DeployMethod::ReleaseChannel(_) = self.deploy_method {
                 ("solana-release", "./src/scripts".to_string())
             } else {
-                ("farf", format!("./docker-build/{}", validator_type))
+                ("farf", format!("./docker-build/{validator_type}"))
             };
 
         let dockerfile = format!(

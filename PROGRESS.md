@@ -18,12 +18,12 @@
 - [x] Docker Build and Push to registry
     - [x] Bootstrap
     - [x] Validator (regular)
-    - [ ] RPC nodes
+    - [x] RPC nodes
     - [ ] Client
 - [ ] Create & Deploy Secrets
     - [x] Bootstrap
     - [x] Validator (regular)
-    - [ ] RPC nodes
+    - [x] RPC nodes
     - [ ] Client
 - [ ] Create & Deploy Selector
     - [x] Bootstrap

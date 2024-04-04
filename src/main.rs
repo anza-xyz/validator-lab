@@ -570,7 +570,7 @@ async fn main() {
     //TODO do not parse thrice
     let mut rpc_node = Validator::new(DockerImage::new(
         matches.value_of("registry_name").unwrap().to_string(),
-        ValidatorType::Standard,
+        ValidatorType::RPC,
         matches.value_of("image_name").unwrap().to_string(),
         matches
             .value_of("image_tag")
@@ -579,12 +579,12 @@ async fn main() {
     ));
 
     if build_config.docker_build() {
-        let validators = vec![&bootstrap_validator, &validator];
+        let validators = vec![&bootstrap_validator, &validator, &rpc_node];
         for v in &validators {
             match docker.build_image(solana_root.get_root_path(), v.image()) {
                 Ok(_) => info!("{} image built successfully", v.validator_type()),
                 Err(err) => {
-                    error!("Exiting........ {err}");
+                    error!("Failed to build docker image {err}");
                     return;
                 }
             }
@@ -594,7 +594,7 @@ async fn main() {
             match DockerConfig::push_image(v.image()) {
                 Ok(_) => info!("{} image pushed successfully", v.validator_type()),
                 Err(err) => {
-                    error!("Exiting........ {err}");
+                    error!("Failed to push docker image {err}");
                     return;
                 }
             }
