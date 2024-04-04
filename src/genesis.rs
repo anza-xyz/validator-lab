@@ -4,7 +4,11 @@ use {
     rand::Rng,
     solana_core::gen_keys::GenKeys,
     solana_sdk::signature::{write_keypair_file, Keypair},
-    std::{error::Error, path::PathBuf, result::Result},
+    std::{
+        error::Error,
+        path::{Path, PathBuf},
+        result::Result,
+    },
 };
 
 pub struct Genesis {
@@ -13,7 +17,7 @@ pub struct Genesis {
 }
 
 impl Genesis {
-    pub fn new(solana_root: &PathBuf) -> Self {
+    pub fn new(solana_root: &Path) -> Self {
         let config_dir = solana_root.join("config-k8s");
         if config_dir.exists() {
             std::fs::remove_dir_all(&config_dir).unwrap();
@@ -48,11 +52,12 @@ impl Genesis {
 
         info!("generating {number_of_accounts} {validator_type} accounts...");
 
-        let mut account_types = vec!["identity", "stake-account", "vote-account"];
-        match validator_type {
-            ValidatorType::Bootstrap | ValidatorType::Standard => (),
+        let account_types = match validator_type {
+            ValidatorType::Bootstrap | ValidatorType::Standard => {
+                vec!["identity", "stake-account", "vote-account"]
+            }
             ValidatorType::RPC => {
-                account_types.pop(); // no vote-account for RPC
+                vec!["identity"] // no vote or stake account for RPC
             }
             ValidatorType::Client => panic!("Client type not supported"),
         };
@@ -70,8 +75,8 @@ impl Genesis {
     fn write_accounts_to_file(
         &self,
         validator_type: &ValidatorType,
-        account_types: &Vec<&str>,
-        keypairs: &Vec<Keypair>,
+        account_types: &[&str],
+        keypairs: &[Keypair],
     ) -> Result<(), Box<dyn Error>> {
         for (i, keypair) in keypairs.iter().enumerate() {
             let account_index = i / account_types.len();
@@ -87,7 +92,7 @@ impl Genesis {
             };
 
             let outfile = self.config_dir.join(&filename);
-            write_keypair_file(&keypair, outfile)?;
+            write_keypair_file(keypair, outfile)?;
         }
         Ok(())
     }
