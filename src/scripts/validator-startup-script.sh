@@ -9,13 +9,33 @@ args=(
   --no-os-network-limits-test
 )
 airdrops_enabled=1
-# next two values will be overwritten based on command line args. default is set here: k8s-cluster/src/genesis.rs
+node_sol=
+stake_sol=
 identity=validator-accounts/identity.json
 vote_account=validator-accounts/vote.json
 no_restart=0
 gossip_entrypoint=$BOOTSTRAP_GOSSIP_ADDRESS
 ledger_dir=/home/solana/ledger
 faucet_address=$LOAD_BALANCER_FAUCET_ADDRESS
+
+# Define the paths to the validator cli. pre 1.18 is `solana-validator`. post 1.18 is `agave-validator`
+agave_validator="/home/solana/.cargo/bin/agave-validator"
+solana_validator="/home/solana/.cargo/bin/solana-validator"
+
+# Initialize program variable
+program=""
+
+# Check if agave-validator exists and is executable
+if [[ -x "$agave_validator" ]]; then
+    program="agave-validator"
+elif [[ -x "$solana_validator" ]]; then
+    program="solana-validator"
+else
+    echo "Neither agave-validator nor solana-validator could be found or is not executable."
+    exit 1
+fi
+
+echo "PROGRAM: $program"
 
 usage() {
   if [[ -n $1 ]]; then
@@ -235,9 +255,6 @@ default_arg --no-incremental-snapshots
 default_arg --allow-private-addr
 default_arg --gossip-port 8001
 default_arg --rpc-port 8899
-
-program="agave-validator"
-echo "program: $program"
 
 PS4="$(basename "$0"): "
 echo "PS4: $PS4"

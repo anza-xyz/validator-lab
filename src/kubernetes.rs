@@ -459,4 +459,12 @@ impl<'a> Kubernetes<'a> {
             self.pod_requests.requests.clone(),
         )
     }
+
+    pub fn create_validator_service(
+        &self,
+        service_name: &str,
+        label_selector: &BTreeMap<String, String>,
+    ) -> Service {
+        k8s_helpers::create_service(service_name, self.namespace.as_str(), label_selector, false)
+    }
 }

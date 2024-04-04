@@ -63,6 +63,10 @@ impl BuildConfig {
     }
 
     pub async fn prepare(&self) -> Result<(), Box<dyn Error>> {
+        if self.build_type == BuildType::Skip {
+            info!("skipping build");
+            return Ok(());
+        }
         match &self.deploy_method {
             DeployMethod::ReleaseChannel(channel) => match self.setup_tar_deploy(channel).await {
                 Ok(tar_directory) => {
@@ -97,11 +101,7 @@ impl BuildConfig {
     }
 
     fn setup_local_deploy(&self) -> Result<(), Box<dyn Error>> {
-        if self.build_type != BuildType::Skip {
-            self.build()?;
-        } else {
-            info!("Build skipped due to --build-type skip");
-        }
+        self.build()?;
         Ok(())
     }
 

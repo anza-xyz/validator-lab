@@ -7,10 +7,24 @@ nohup solana-faucet --keypair bootstrap-accounts/faucet.json &
 # Start the bootstrap validator node
 # shellcheck disable=SC1091
 source /home/solana/k8s-cluster-scripts/common.sh
-
-program="agave-validator"
-
 no_restart=0
+
+# Define the paths to the validator cli. pre 1.18 is `solana-validator`. post 1.18 is `agave-validator`
+agave_validator="/home/solana/.cargo/bin/agave-validator"
+solana_validator="/home/solana/.cargo/bin/solana-validator"
+
+# Initialize program variable
+program=""
+
+# Check if agave-validator exists and is executable
+if [[ -x "$agave_validator" ]]; then
+    program="agave-validator"
+elif [[ -x "$solana_validator" ]]; then
+    program="solana-validator"
+else
+    echo "Neither agave-validator nor solana-validator could be found or is not executable."
+    exit 1
+fi
 
 echo "PROGRAM: $program"
 

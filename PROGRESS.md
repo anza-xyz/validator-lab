@@ -17,7 +17,7 @@
     - [x] Build genesis
 - [x] Docker Build and Push to registry
     - [x] Bootstrap
-    - [ ] Validator (regular)
+    - [x] Validator (regular)
     - [ ] RPC nodes
     - [ ] Client
 - [ ] Create & Deploy Secrets
@@ -37,7 +37,7 @@
     - [ ] Client
 - [ ] Create & Deploy Services
     - [x] Bootstrap
-    - [ ] Validator (regular)
+    - [x] Validator (regular)
     - [ ] RPC nodes
     - [ ] Client
 - [x] Check Bootstrap is deployed and running
