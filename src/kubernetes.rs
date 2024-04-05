@@ -6,8 +6,8 @@ use {
         api::{
             apps::v1::ReplicaSet,
             core::v1::{
-                EnvVar, EnvVarSource, Namespace, ObjectFieldSelector, Secret, SecretKeySelector,
-                SecretVolumeSource, Service, Volume, VolumeMount,
+                EnvVar, EnvVarSource, ExecAction, Namespace, ObjectFieldSelector, Probe, Secret,
+                SecretKeySelector, SecretVolumeSource, Service, Volume, VolumeMount,
             },
         },
         apimachinery::pkg::api::resource::Quantity,
@@ -198,6 +198,7 @@ impl<'a> Kubernetes<'a> {
             accounts_volume,
             accounts_volume_mount,
             self.pod_requests.requests.clone(),
+            None,
         )
     }
 
@@ -231,6 +232,19 @@ impl<'a> Kubernetes<'a> {
     fn generate_bootstrap_command_flags(&self) -> Vec<String> {
         let mut flags: Vec<String> = Vec::new();
         self.generate_command_flags(&mut flags);
+
+        flags
+    }
+
+    fn generate_rpc_command_flags(&self) -> Vec<String> {
+        let mut flags: Vec<String> = Vec::new();
+        self.generate_command_flags(&mut flags);
+        if let Some(shred_version) = self.validator_config.shred_version {
+            flags.push("--expected-shred-version".to_string());
+            flags.push(shred_version.to_string());
+        }
+
+        self.add_known_validators_if_exists(&mut flags);
 
         flags
     }
@@ -451,6 +465,7 @@ impl<'a> Kubernetes<'a> {
             accounts_volume,
             accounts_volume_mount,
             self.pod_requests.requests.clone(),
+            None,
         )
     }
 
@@ -478,5 +493,80 @@ impl<'a> Kubernetes<'a> {
         ];
 
         k8s_helpers::create_secret_from_files(&secret_name, &key_files)
+    }
+
+    pub fn create_rpc_replica_set(
+        &mut self,
+        image: &DockerImage,
+        secret_name: Option<String>,
+        label_selector: &BTreeMap<String, String>,
+        rpc_index: usize,
+    ) -> Result<ReplicaSet, Box<dyn Error>> {
+        let mut env_vars = vec![EnvVar {
+            name: "MY_POD_IP".to_string(),
+            value_from: Some(EnvVarSource {
+                field_ref: Some(ObjectFieldSelector {
+                    field_path: "status.podIP".to_string(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }];
+        env_vars.append(&mut self.set_non_bootstrap_environment_variables());
+        env_vars.append(&mut self.set_load_balancer_environment_variables());
+
+        if self.metrics.is_some() {
+            env_vars.push(self.get_metrics_env_var_secret())
+        }
+
+        let accounts_volume = Some(vec![Volume {
+            name: format!("rpc-node-accounts-volume-{}", rpc_index),
+            secret: Some(SecretVolumeSource {
+                secret_name,
+                ..Default::default()
+            }),
+            ..Default::default()
+        }]);
+
+        let accounts_volume_mount = Some(vec![VolumeMount {
+            name: format!("rpc-node-accounts-volume-{}", rpc_index),
+            mount_path: "/home/solana/rpc-node-accounts".to_string(),
+            ..Default::default()
+        }]);
+
+        let mut command =
+            vec!["/home/solana/k8s-cluster-scripts/rpc-node-startup-script.sh".to_string()];
+        command.extend(self.generate_rpc_command_flags());
+
+        let exec_action = ExecAction {
+            command: Some(vec![
+                String::from("/bin/bash"),
+                String::from("-c"),
+                String::from(
+                    "solana -u http://$MY_POD_IP:8899 balance -k rpc-node-accounts/identity.json",
+                ),
+            ]),
+        };
+
+        let readiness_probe = Probe {
+            exec: Some(exec_action),
+            initial_delay_seconds: Some(20),
+            period_seconds: Some(20),
+            ..Default::default()
+        };
+
+        k8s_helpers::create_replica_set(
+            &format!("{}-{rpc_index}", ValidatorType::RPC),
+            self.namespace.as_str(),
+            label_selector,
+            image,
+            env_vars,
+            &command,
+            accounts_volume,
+            accounts_volume_mount,
+            self.pod_requests.requests.clone(),
+            Some(readiness_probe),
+        )
     }
 }

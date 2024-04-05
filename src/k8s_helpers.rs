@@ -5,8 +5,8 @@ use {
             apps::v1::{ReplicaSet, ReplicaSetSpec},
             core::v1::{
                 Container, EnvVar, EnvVarSource, ObjectFieldSelector, PodSecurityContext, PodSpec,
-                PodTemplateSpec, ResourceRequirements, Secret, Service, ServicePort, ServiceSpec,
-                Volume, VolumeMount,
+                PodTemplateSpec, Probe, ResourceRequirements, Secret, Service, ServicePort,
+                ServiceSpec, Volume, VolumeMount,
             },
         },
         apimachinery::pkg::{api::resource::Quantity, apis::meta::v1::LabelSelector},
@@ -52,6 +52,7 @@ pub fn create_replica_set(
     volumes: Option<Vec<Volume>>,
     volume_mounts: Option<Vec<VolumeMount>>,
     pod_requests: BTreeMap<String, Quantity>,
+    readiness_probe: Option<Probe>,
 ) -> Result<ReplicaSet, Box<dyn Error>> {
     let pod_spec = PodTemplateSpec {
         metadata: Some(ObjectMeta {
@@ -66,6 +67,7 @@ pub fn create_replica_set(
                 env: Some(environment_variables),
                 command: Some(command.to_owned()),
                 volume_mounts,
+                readiness_probe,
                 resources: Some(ResourceRequirements {
                     requests: Some(pod_requests),
                     ..Default::default()

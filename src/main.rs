@@ -783,6 +783,31 @@ async fn main() {
                 "load-balancer-selector",
                 LabelType::ValidatorReplicaSet,
             );
+
+            let rpc_replica_set = match kub_controller.create_rpc_replica_set(
+                rpc_node.image(),
+                rpc_node.secret().metadata.name.clone(),
+                rpc_node.replica_set_labels(),
+                rpc_index,
+            ) {
+                Ok(replica_set) => replica_set,
+                Err(err) => {
+                    error!("Error creating rpc node replicas_set: {err}");
+                    return;
+                }
+            };
+
+            // deploy rpc node replica set
+            let _ = match kub_controller.deploy_replicas_set(&rpc_replica_set).await {
+                Ok(rs) => {
+                    info!("non voting validator replica set ({rpc_index}) deployed successfully");
+                    rs.metadata.name.unwrap()
+                }
+                Err(err) => {
+                    error!("Error! Failed to deploy non voting validator replica set: {rpc_index}. err: {err}");
+                    return;
+                }
+            };
         }
     }
 
@@ -854,7 +879,6 @@ async fn main() {
             }
         };
 
-        // let service_name = format!("validator-service-{index}");
         let validator_service = kub_controller.create_validator_service(
             &format!("validator-service-{validator_index}"),
             validator.replica_set_labels(),
