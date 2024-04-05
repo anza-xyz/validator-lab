@@ -65,7 +65,7 @@ impl DockerConfig {
 
     pub fn build_image(
         &self,
-        solana_root_path: PathBuf,
+        solana_root_path: &PathBuf,
         docker_image: &DockerImage,
     ) -> Result<(), Box<dyn Error>> {
         let validator_type = docker_image.validator_type();
@@ -85,19 +85,45 @@ impl DockerConfig {
             &docker_image,
             docker_path,
             &validator_type,
+            None,
         )?;
 
         Ok(())
     }
 
+    pub fn build_client_images(
+        &self,
+        solana_root_path: &PathBuf,
+        docker_image: &DockerImage,
+        client_count: i32,
+    ) -> Result<(), Box<dyn Error>> {
+        for i in 0..client_count {
+            let docker_path = solana_root_path.join(format!(
+                "docker-build/{}-{}",
+                docker_image.validator_type(),
+                i
+            ));
+            self.create_base_image(
+                solana_root_path,
+                docker_image,
+                docker_path,
+                &ValidatorType::Client,
+                Some(i),
+            )?
+        }
+        Ok(())
+    }
+
     fn create_base_image(
         &self,
-        solana_root_path: PathBuf,
+        solana_root_path: &PathBuf,
         docker_image: &DockerImage,
         docker_path: PathBuf,
         validator_type: &ValidatorType,
+        index: Option<i32>,
     ) -> Result<(), Box<dyn Error>> {
-        let dockerfile_path = self.create_dockerfile(validator_type, docker_path, None)?;
+        let dockerfile_path =
+            self.create_dockerfile(validator_type, docker_path, solana_root_path, None, index)?;
 
         // We use std::process::Command here because Docker-rs is very slow building dockerfiles
         // when they are in large repos. Docker-rs doesn't seem to support the `--file` flag natively.
@@ -146,7 +172,9 @@ impl DockerConfig {
         &self,
         validator_type: &ValidatorType,
         docker_path: PathBuf,
+        solana_root_path: &PathBuf,
         content: Option<&str>,
+        index: Option<i32>,
     ) -> Result<PathBuf, Box<dyn Error>> {
         if docker_path.exists() {
             fs::remove_dir_all(&docker_path)?;
@@ -204,12 +232,60 @@ WORKDIR /home/solana
             self.base_image
         );
 
+        let dockerfile = format!(
+            "{dockerfile}\n{}",
+            self.insert_client_accounts_if_present(solana_root_path, index)
+        );
+
         debug!("dockerfile: {}", dockerfile);
         std::fs::write(
             docker_path.join("Dockerfile"),
             content.unwrap_or(dockerfile.as_str()),
         )?;
         Ok(docker_path)
+    }
+
+    // TODO: don't think validator and rpcs need client-accounts.yml. think only bootstrap
+    fn insert_client_accounts_if_present(
+        &self,
+        solana_root_path: &PathBuf,
+        index: Option<i32>,
+    ) -> String {
+        match index {
+            Some(i) => {
+                // client image
+                if solana_root_path
+                    .join(format!("config-k8s/bench-tps-{i}.yml"))
+                    .exists()
+                {
+                    info!("some (i)");
+                    format!(
+                        r#"
+        COPY --chown=solana:solana ./config-k8s/bench-tps-{i}.yml /home/solana/client-accounts.yml
+                    "#,
+                    )
+                } else {
+                    info!("some(i). but path doesn't exist");
+                    "".to_string()
+                }
+            }
+            None => {
+                // bootstrap image
+                if solana_root_path
+                    .join("config-k8s/client-accounts.yml")
+                    .exists()
+                {
+                    info!("index is None. path exists");
+                    r#"
+        COPY --chown=solana:solana ./config-k8s/client-accounts.yml /home/solana
+                    "#
+                    .to_string()
+                } else {
+                    info!("index is none. path doesn't exist");
+                    "".to_string()
+                }
+            }
+        }
     }
 
     pub fn push_image(docker_image: &DockerImage) -> Result<(), Box<dyn Error>> {

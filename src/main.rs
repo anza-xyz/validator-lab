@@ -616,7 +616,7 @@ async fn main() {
     if build_config.docker_build() {
         let validators = vec![&bootstrap_validator, &validator, &rpc_node];
         for v in &validators {
-            match docker.build_image(solana_root.get_root_path(), v.image()) {
+            match docker.build_image(&solana_root.get_root_path(), v.image()) {
                 Ok(_) => info!("{} image built successfully", v.validator_type()),
                 Err(err) => {
                     error!("Failed to build docker image {err}");

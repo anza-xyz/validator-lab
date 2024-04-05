@@ -307,6 +307,16 @@ impl Genesis {
             args.push(lamports_per_signature.to_string());
         }
 
+        if self.config_dir.join("client-accounts.yml").exists() {
+            args.push("--primordial-accounts-file".to_string());
+            args.push(
+                self.config_dir
+                    .join("client-accounts.yml")
+                    .to_string_lossy()
+                    .to_string(),
+            );
+        }
+
         args
     }
 
@@ -361,7 +371,7 @@ impl Genesis {
     ) -> Result<(), Box<dyn Error>> {
         let client_accounts_file = config_dir.join("client-accounts.yml");
 
-        info!("generating {number_of_clients} client accounts...");
+        info!("generating {number_of_clients} client account(s)...");
         let _ = (0..number_of_clients).into_par_iter().try_for_each(|i| {
             info!("client account: {i}");
             let mut args = Vec::new();
