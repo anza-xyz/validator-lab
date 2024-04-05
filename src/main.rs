@@ -613,6 +613,18 @@ async fn main() {
             .to_string(),
     ));
 
+    //TODO do not parse four times
+    // we need a new image for each client!!!
+    let mut client = Validator::new(DockerImage::new(
+        matches.value_of("registry_name").unwrap().to_string(),
+        ValidatorType::Client,
+        matches.value_of("image_name").unwrap().to_string(),
+        matches
+            .value_of("image_tag")
+            .unwrap_or_default()
+            .to_string(),
+    ));
+
     if build_config.docker_build() {
         let validators = vec![&bootstrap_validator, &validator, &rpc_node];
         for v in &validators {
@@ -630,6 +642,25 @@ async fn main() {
                 Ok(_) => info!("{} image pushed successfully", v.validator_type()),
                 Err(err) => {
                     error!("Failed to push docker image {err}");
+                    return;
+                }
+            }
+        }
+
+        if client_config.num_clients > 0 {
+            // need new image for each client
+            match docker.build_client_images(&solana_root.get_root_path(), &client.image(), client_config.num_clients) {
+                Ok(_) => info!("Client image built successfully"),
+                Err(err) => {
+                    error!("Failed to build client image {err}");
+                    return;
+                }
+            }
+
+            match docker.push_client_images(client_config.num_clients) {
+                Ok(_) => info!("Client image pushed successfully"),
+                Err(err) => {
+                    error!("Exiting........ {}", err);
                     return;
                 }
             }

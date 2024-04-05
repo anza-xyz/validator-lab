@@ -1,6 +1,7 @@
 use {
     crate::{new_spinner_progress_bar, release::DeployMethod, ValidatorType, BUILD, ROCKET},
     log::*,
+    rayon::prelude::*,
     std::{
         env,
         error::Error,
@@ -95,7 +96,7 @@ impl DockerConfig {
         &self,
         solana_root_path: &PathBuf,
         docker_image: &DockerImage,
-        client_count: i32,
+        client_count: usize,
     ) -> Result<(), Box<dyn Error>> {
         for i in 0..client_count {
             let docker_path = solana_root_path.join(format!(
@@ -120,7 +121,7 @@ impl DockerConfig {
         docker_image: &DockerImage,
         docker_path: PathBuf,
         validator_type: &ValidatorType,
-        index: Option<i32>,
+        index: Option<usize>,
     ) -> Result<(), Box<dyn Error>> {
         let dockerfile_path =
             self.create_dockerfile(validator_type, docker_path, solana_root_path, None, index)?;
@@ -174,7 +175,7 @@ impl DockerConfig {
         docker_path: PathBuf,
         solana_root_path: &PathBuf,
         content: Option<&str>,
-        index: Option<i32>,
+        index: Option<usize>,
     ) -> Result<PathBuf, Box<dyn Error>> {
         if docker_path.exists() {
             fs::remove_dir_all(&docker_path)?;
@@ -249,7 +250,7 @@ WORKDIR /home/solana
     fn insert_client_accounts_if_present(
         &self,
         solana_root_path: &PathBuf,
-        index: Option<i32>,
+        index: Option<usize>,
     ) -> String {
         match index {
             Some(i) => {
@@ -294,7 +295,7 @@ WORKDIR /home/solana
             "{ROCKET}Pushing {} image to registry...",
             docker_image.validator_type()
         ));
-        let command = format!("docker push '{}'", docker_image);
+        let command = format!("docker push '{docker_image}'");
         let output = match Command::new("sh")
             .arg("-c")
             .arg(&command)
@@ -313,5 +314,22 @@ WORKDIR /home/solana
         }
         progress_bar.finish_and_clear();
         Ok(())
+    }
+
+    // need a new image for each client
+    pub fn push_client_images(&self, num_clients: i32) -> Result<(), Box<dyn Error>> {
+        info!("Pushing client images...");
+        (0..num_clients).into_par_iter().try_for_each(|i| {
+            let image = format!(
+                "{}/{}-{}-{}:{}",
+                self.image_config.registry,
+                ValidatorType::Client,
+                "image",
+                i,
+                self.image_config.tag
+            );
+
+            Self::push_image(image, format!("client-{}", i).as_str())
+        })
     }
 }
