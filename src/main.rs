@@ -732,10 +732,7 @@ async fn main() {
             Err(err) => panic!("Error occurred while checking replica set readiness: {err}"),
         }
     } {
-        info!(
-            "replica set: {} not ready...",
-            bootstrap_validator.replica_set_name()
-        );
+        info!("{} not ready...", bootstrap_validator.replica_set_name());
         thread::sleep(Duration::from_secs(1));
     }
 
@@ -808,6 +805,21 @@ async fn main() {
                     return;
                 }
             };
+
+            rpc_node.add_label(
+                "service/name",
+                &format!("rpc-node-selector-{rpc_index}"),
+                LabelType::ValidatorService,
+            );
+
+            let rpc_service = kub_controller.create_validator_service(
+                format!("rpc-node-selector-{rpc_index}").as_str(),
+                rpc_node.service_labels(),
+            );
+            match kub_controller.deploy_service(&rpc_service).await {
+                Ok(_) => info!("rpc node service deployed successfully"),
+                Err(err) => error!("Error! Failed to deploy rpc node service. err: {err}"),
+            }
         }
     }
 

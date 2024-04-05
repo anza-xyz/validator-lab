@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-nohup solana-faucet --keypair non-voting-validator-accounts/faucet.json &
+nohup solana-faucet --keypair rpc-node-accounts/faucet.json &
 
 # Start Validator
 # shellcheck disable=SC1091
@@ -15,12 +15,32 @@ args=(
 )
 airdrops_enabled=1
 node_sol=500 # 500 SOL: number of SOL to airdrop the node for transaction fees and vote account rent exemption (ignored if airdrops_enabled=0)
-identity=non-voting-validator-accounts/identity.json
+identity=rpc-node-accounts/identity.json
 no_restart=0
 gossip_entrypoint=$BOOTSTRAP_GOSSIP_ADDRESS
 ledger_dir=/home/solana/ledger
 # faucet_address=$BOOTSTRAP_FAUCET_ADDRESS
 faucet_address=$LOAD_BALANCER_FAUCET_ADDRESS
+
+
+# Define the paths to the validator cli. pre 1.18 is `solana-validator`. post 1.18 is `agave-validator`
+agave_validator="/home/solana/.cargo/bin/agave-validator"
+solana_validator="/home/solana/.cargo/bin/solana-validator"
+
+# Initialize program variable
+program=""
+
+# Check if agave-validator exists and is executable
+if [[ -x "$agave_validator" ]]; then
+    program="agave-validator"
+elif [[ -x "$solana_validator" ]]; then
+    program="solana-validator"
+else
+    echo "Neither agave-validator nor solana-validator could be found or is not executable."
+    exit 1
+fi
+
+echo "program: $program"
 
 usage() {
   if [[ -n $1 ]]; then
@@ -230,15 +250,6 @@ default_arg --allow-private-addr
 default_arg --gossip-port 8001
 default_arg --rpc-port 8899
 
-program=
-if [[ -n $SOLANA_CUDA ]]; then
-  program="agave-validator --cuda"
-else
-  program="agave-validator"
-fi
-
-echo "program: $program"
-
 # set -e
 PS4="$(basename "$0"): "
 echo "PS4: $PS4"
@@ -284,7 +295,7 @@ while true; do
 
   while true; do
     if [[ -z $pid ]] || ! kill -0 "$pid"; then
-      echo "############## non voting validator exited, restarting ##############"
+      echo "############## rpc node exited, restarting ##############"
       break
     fi
     sleep 1
