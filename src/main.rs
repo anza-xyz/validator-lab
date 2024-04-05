@@ -523,7 +523,7 @@ async fn main() {
     match genesis.generate_accounts(ValidatorType::RPC, num_rpc_nodes) {
         Ok(_) => (),
         Err(err) => {
-            error!("generate non voting accounts error! {err}");
+            error!("generate rpc accounts error! {err}");
             return;
         }
     }
@@ -711,10 +711,8 @@ async fn main() {
     let load_balancer_label =
         kub_controller.create_selector("load-balancer/name", "load-balancer-selector");
     //create load balancer
-    let load_balancer = kub_controller.create_validator_load_balancer(
-        "bootstrap-and-non-voting-lb-service",
-        &load_balancer_label,
-    );
+    let load_balancer = kub_controller
+        .create_validator_load_balancer("bootstrap-and-rpc-lb-service", &load_balancer_label);
 
     //deploy load balancer
     match kub_controller.deploy_service(&load_balancer).await {
@@ -737,6 +735,7 @@ async fn main() {
     }
 
     if num_rpc_nodes > 0 {
+        let mut rpc_nodes = vec![];
         for rpc_index in 0..num_rpc_nodes {
             match kub_controller.create_rpc_secret(rpc_index, &config_directory) {
                 Ok(secret) => rpc_node.set_secret(secret),
@@ -795,16 +794,17 @@ async fn main() {
             };
 
             // deploy rpc node replica set
-            let _ = match kub_controller.deploy_replicas_set(&rpc_replica_set).await {
+            let rpc_node_name = match kub_controller.deploy_replicas_set(&rpc_replica_set).await {
                 Ok(rs) => {
-                    info!("non voting validator replica set ({rpc_index}) deployed successfully");
+                    info!("rpc node replica set ({rpc_index}) deployed successfully");
                     rs.metadata.name.unwrap()
                 }
                 Err(err) => {
-                    error!("Error! Failed to deploy non voting validator replica set: {rpc_index}. err: {err}");
+                    error!("Error! Failed to deploy rpc node replica set: {rpc_index}. err: {err}");
                     return;
                 }
             };
+            rpc_nodes.push(rpc_node_name);
 
             rpc_node.add_label(
                 "service/name",
@@ -821,6 +821,35 @@ async fn main() {
                 Err(err) => error!("Error! Failed to deploy rpc node service. err: {err}"),
             }
         }
+
+        // wait for at least one rpc node to deploy
+        loop {
+            let mut one_rpc_node_ready = false;
+            for rpc_node in &rpc_nodes {
+                match kub_controller
+                    .check_replica_set_ready(rpc_node.as_str())
+                    .await
+                {
+                    Ok(ready) => {
+                        if ready {
+                            one_rpc_node_ready = true;
+                            break;
+                        }
+                    } // Continue the loop if replica set is not ready: Ok(false)
+                    Err(err) => panic!(
+                        "Error occurred while checking rpc node replica set readiness: {err}"
+                    ),
+                }
+            }
+
+            if one_rpc_node_ready {
+                break;
+            }
+
+            info!("no rpc replica sets ready yet");
+            thread::sleep(Duration::from_secs(10));
+        }
+        info!(">= 1 rpc node ready");
     }
 
     // Create and deploy validators secrets/selectors
