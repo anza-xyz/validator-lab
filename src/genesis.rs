@@ -1,13 +1,22 @@
 use {
-    crate::{new_spinner_progress_bar, ValidatorType, SUN},
+    crate::{new_spinner_progress_bar, release::DeployMethod, ValidatorType, SUN, WRITING},
+    anyhow::Error as AnyHowError,
     log::*,
     rand::Rng,
+    rayon::prelude::*,
     solana_core::gen_keys::GenKeys,
     solana_sdk::{
         native_token::sol_to_lamports,
         signature::{write_keypair_file, Keypair},
     },
-    std::{error::Error, fs::File, io::Read, path::PathBuf, process::Command, result::Result},
+    std::{
+        error::Error,
+        fs::{File, OpenOptions},
+        io::{self, BufRead, BufWriter, Read, Write},
+        path::PathBuf,
+        process::Command,
+        result::Result,
+    },
 };
 
 pub const DEFAULT_FAUCET_LAMPORTS: u64 = 500000000000000000; // from agave/
@@ -16,6 +25,7 @@ pub const DEFAULT_INTERNAL_NODE_STAKE_SOL: f64 = 10.0;
 pub const DEFAULT_INTERNAL_NODE_SOL: f64 = 100.0;
 pub const DEFAULT_BOOTSTRAP_NODE_STAKE_SOL: f64 = 10.0;
 pub const DEFAULT_BOOTSTRAP_NODE_SOL: f64 = 100.0;
+pub const DEFAULT_CLIENT_LAMPORTS_PER_SIGNATURE: u64 = 42;
 
 fn fetch_spl(fetch_spl_file: &PathBuf) -> Result<(), Box<dyn Error>> {
     let output = Command::new("bash")
@@ -61,6 +71,34 @@ fn parse_spl_genesis_file(spl_file: &PathBuf) -> Result<Vec<String>, Box<dyn Err
     }
 
     Ok(args)
+}
+
+fn append_client_accounts_to_file(
+    in_file: &PathBuf,  //bench-tps-i.yml
+    out_file: &PathBuf, //client-accounts.yml
+) -> io::Result<()> {
+    // Open the bench-tps-i.yml file for reading.
+    let input = File::open(in_file)?;
+    let reader = io::BufReader::new(input);
+
+    // Open (or create) client-accounts.yml
+    let output = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(out_file)?;
+    let mut writer = BufWriter::new(output);
+
+    // Enumerate the lines of the input file, starting from 1.
+    for (index, line) in reader.lines().enumerate().map(|(i, l)| (i + 1, l)) {
+        let line = line?;
+
+        // Skip first line since it is a header aka "---" in a yaml
+        if (index as u64) > 1 {
+            writeln!(writer, "{line}")?;
+        }
+    }
+
+    Ok(())
 }
 
 pub struct GenesisFlags {
@@ -310,6 +348,65 @@ impl Genesis {
         }
         info!("Genesis build complete");
 
+        Ok(())
+    }
+
+    pub fn create_client_accounts(
+        &mut self,
+        number_of_clients: usize,
+        target_lamports_per_signature: u64,
+        config_dir: &PathBuf,
+        deploy_method: &DeployMethod,
+        solana_root_path: &PathBuf,
+    ) -> Result<(), Box<dyn Error>> {
+        let client_accounts_file = config_dir.join("client-accounts.yml");
+
+        info!("generating {number_of_clients} client accounts...");
+        let _ = (0..number_of_clients).into_par_iter().try_for_each(|i| {
+            info!("client account: {i}");
+            let mut args = Vec::new();
+            let account_path = config_dir.join(format!("bench-tps-{i}.yml"));
+            args.push("--write-client-keys".to_string());
+            args.push(account_path.to_string_lossy().to_string());
+            args.push("--target-lamports-per-signature".to_string());
+            args.push(target_lamports_per_signature.to_string());
+
+            let executable_path = if let DeployMethod::ReleaseChannel(_) = deploy_method {
+                solana_root_path.join("solana-release/bin/solana-bench-tps")
+            } else {
+                solana_root_path.join("farf/bin/solana-bench-tps")
+            };
+
+            Self::create_client_account(&args, &executable_path)
+        });
+
+        let progress_bar = new_spinner_progress_bar();
+        progress_bar.set_message(format!("{WRITING}Writing client accounts..."));
+        for i in 0..number_of_clients {
+            let account_path = config_dir.join(format!("bench-tps-{i}.yml"));
+            append_client_accounts_to_file(&account_path, &client_accounts_file)?;
+        }
+        progress_bar.finish_and_clear();
+        info!("client-accounts.yml creation for genesis complete");
+
+        Ok(())
+    }
+
+    fn create_client_account(
+        args: &Vec<String>,
+        executable_path: &PathBuf,
+    ) -> Result<(), AnyHowError> {
+        let output = Command::new(executable_path)
+            .args(args)
+            .output()
+            .expect("Failed to execute solana-bench-tps");
+
+        if !output.status.success() {
+            return Err(AnyHowError::msg(format!(
+                "Failed to create client accounts. err: {}",
+                String::from_utf8_lossy(&output.stderr)
+            )));
+        }
         Ok(())
     }
 }

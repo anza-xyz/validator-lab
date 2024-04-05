@@ -50,7 +50,7 @@
 - [ ] Create accounts
     - [x] Validator (regular)
     - [x] RPC
-    - [ ] Client
+    - [x] Client
 - [ ] Add feature flags to configure:
     - [ ] Bootstrap
     - [ ] Validator (regular)

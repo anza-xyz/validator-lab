@@ -8,9 +8,11 @@ use {
     std::{fs, thread, time::Duration},
     strum::VariantNames,
     validator_lab::{
+        client_config::ClientConfig,
         docker::{DockerConfig, DockerImage},
         genesis::{
-            Genesis, GenesisFlags, DEFAULT_INTERNAL_NODE_SOL, DEFAULT_INTERNAL_NODE_STAKE_SOL,
+            Genesis, GenesisFlags, DEFAULT_CLIENT_LAMPORTS_PER_SIGNATURE,
+            DEFAULT_INTERNAL_NODE_SOL, DEFAULT_INTERNAL_NODE_STAKE_SOL,
         },
         kubernetes::{Kubernetes, PodRequests},
         ledger_helper::LedgerHelper,
@@ -237,6 +239,19 @@ fn parse_matches() -> clap::ArgMatches {
                     _ => Err(String::from("number_of_rpc_nodes should be >= 0")),
                 }),
         )
+        // Client Configurations
+        .arg(
+            Arg::with_name("number_of_clients")
+                .long("num-clients")
+                .short('c')
+                .takes_value(true)
+                .default_value("0")
+                .help("Number of clients ")
+                .validator(|s| match s.parse::<i32>() {
+                    Ok(n) if n >= 0 => Ok(()),
+                    _ => Err(String::from("number_of_clients should be >= 0")),
+                }),
+        )
         // kubernetes config
         .arg(
             Arg::with_name("cpu_requests")
@@ -309,6 +324,9 @@ async fn main() {
 
     let num_validators = value_t_or_exit!(matches, "number_of_validators", usize);
     let num_rpc_nodes = value_t_or_exit!(matches, "number_of_rpc_nodes", usize);
+    let client_config = ClientConfig {
+        num_clients: value_t_or_exit!(matches, "number_of_clients", usize),
+    };
 
     let deploy_method = if let Some(local_path) = matches.value_of("local_path") {
         DeployMethod::Local(local_path.to_owned())
@@ -500,6 +518,23 @@ async fn main() {
         Err(err) => {
             error!("generate accounts error! {err}");
             return;
+        }
+    }
+
+    // only create client accounts once
+    if client_config.num_clients > 0 {
+        match genesis.create_client_accounts(
+            client_config.num_clients,
+            DEFAULT_CLIENT_LAMPORTS_PER_SIGNATURE,
+            &config_directory,
+            &deploy_method,
+            &solana_root.get_root_path(),
+        ) {
+            Ok(_) => info!("Client accounts created successfully"),
+            Err(err) => {
+                error!("generate client accounts error! {err}");
+                return;
+            }
         }
     }
 
