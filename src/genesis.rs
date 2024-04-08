@@ -250,7 +250,7 @@ impl Genesis {
             .for_each(|account_type| {
                 args.push(
                     self.config_dir
-                        .join(format!("bootstrap-validator/{}.json", account_type))
+                        .join(format!("bootstrap-validator/{account_type}.json"))
                         .to_string_lossy()
                         .to_string(),
                 );
@@ -269,10 +269,7 @@ impl Genesis {
         args
     }
 
-    pub fn setup_spl_args(
-        &self,
-        solana_root_path: &PathBuf,
-    ) -> Result<Vec<String>, Box<dyn Error>> {
+    pub fn setup_spl_args(&self, solana_root_path: &Path) -> Result<Vec<String>, Box<dyn Error>> {
         let fetch_spl_file = solana_root_path.join("fetch-spl.sh");
         fetch_spl(&fetch_spl_file)?;
 
@@ -283,8 +280,8 @@ impl Genesis {
 
     pub fn generate(
         &mut self,
-        solana_root_path: &PathBuf,
-        build_path: &PathBuf,
+        solana_root_path: &Path,
+        build_path: &Path,
     ) -> Result<(), Box<dyn Error>> {
         let mut args = self.setup_genesis_flags();
         let mut spl_args = self.setup_spl_args(solana_root_path)?;

@@ -54,6 +54,7 @@ pub enum ValidatorType {
     Client,
 }
 
+pub mod docker;
 pub mod genesis;
 pub mod kubernetes;
 pub mod release;
@@ -79,7 +80,7 @@ pub fn cat_file(path: &PathBuf) -> std::io::Result<()> {
     let mut file = File::open(path)?;
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
-    info!("{:?}:\n{}", path.file_name(), contents);
+    info!("{:?}:\n{contents}", path.file_name());
 
     Ok(())
 }
