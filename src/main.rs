@@ -542,7 +542,7 @@ async fn main() {
     match genesis.generate(solana_root.get_root_path(), build_config.build_path()) {
         Ok(_) => (),
         Err(err) => {
-            error!("generate genesis error! {}", err);
+            error!("generate genesis error! {err}");
             return;
         }
     }
@@ -647,9 +647,10 @@ async fn main() {
             }
         }
 
-        if client_config.num_clients > 0 {
+        for client_index in 0..client_config.num_clients {
+            info!("here!");
             // need new image for each client
-            match docker.build_client_images(&solana_root.get_root_path(), &client.image(), client_config.num_clients) {
+            match docker.build_client_image(&solana_root.get_root_path(), &client.image(), client_index) {
                 Ok(_) => info!("Client image built successfully"),
                 Err(err) => {
                     error!("Failed to build client image {err}");
@@ -657,14 +658,33 @@ async fn main() {
                 }
             }
 
-            match docker.push_client_images(client_config.num_clients) {
-                Ok(_) => info!("Client image pushed successfully"),
-                Err(err) => {
-                    error!("Exiting........ {}", err);
-                    return;
-                }
-            }
+            // match docker.push_client_images(client_config.num_clients) {
+            //     Ok(_) => info!("Client image pushed successfully"),
+            //     Err(err) => {
+            //         error!("Exiting........ {}", err);
+            //         return;
+            //     }
+            // }
         }
+
+        // if client_config.num_clients > 0 {
+        //     // need new image for each client
+        //     match docker.build_client_images(&solana_root.get_root_path(), &client.image(), client_config.num_clients) {
+        //         Ok(_) => info!("Client image built successfully"),
+        //         Err(err) => {
+        //             error!("Failed to build client image {err}");
+        //             return;
+        //         }
+        //     }
+
+        //     match docker.push_client_images(client_config.num_clients) {
+        //         Ok(_) => info!("Client image pushed successfully"),
+        //         Err(err) => {
+        //             error!("Exiting........ {}", err);
+        //             return;
+        //         }
+        //     }
+        // }
     }
 
     // metrics secret create once and use by all pods

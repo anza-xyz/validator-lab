@@ -92,26 +92,23 @@ impl DockerConfig {
         Ok(())
     }
 
-    pub fn build_client_images(
+    pub fn build_client_image(
         &self,
         solana_root_path: &PathBuf,
         docker_image: &DockerImage,
-        client_count: usize,
+        client_index: usize,
     ) -> Result<(), Box<dyn Error>> {
-        for i in 0..client_count {
-            let docker_path = solana_root_path.join(format!(
-                "docker-build/{}-{}",
-                docker_image.validator_type(),
-                i
-            ));
-            self.create_base_image(
-                solana_root_path,
-                docker_image,
-                docker_path,
-                &ValidatorType::Client,
-                Some(i),
-            )?
-        }
+        let docker_path = solana_root_path.join(format!(
+            "docker-build/{}-{client_index}",
+            docker_image.validator_type(),
+        ));
+        self.create_base_image(
+            solana_root_path,
+            docker_image,
+            docker_path,
+            &ValidatorType::Client,
+            Some(client_index),
+        )?;
         Ok(())
     }
 
@@ -316,20 +313,20 @@ WORKDIR /home/solana
         Ok(())
     }
 
-    // need a new image for each client
-    pub fn push_client_images(&self, num_clients: i32) -> Result<(), Box<dyn Error>> {
-        info!("Pushing client images...");
-        (0..num_clients).into_par_iter().try_for_each(|i| {
-            let image = format!(
-                "{}/{}-{}-{}:{}",
-                self.image_config.registry,
-                ValidatorType::Client,
-                "image",
-                i,
-                self.image_config.tag
-            );
+    // // need a new image for each client
+    // pub fn push_client_images(&self, num_clients: i32) -> Result<(), Box<dyn Error>> {
+    //     info!("Pushing client images...");
+    //     (0..num_clients).into_par_iter().try_for_each(|i| {
+    //         let image = format!(
+    //             "{}/{}-{}-{}:{}",
+    //             self.image_config.registry,
+    //             ValidatorType::Client,
+    //             "image",
+    //             i,
+    //             self.image_config.tag
+    //         );
 
-            Self::push_image(image, format!("client-{}", i).as_str())
-        })
-    }
+    //         Self::push_image(image, format!("client-{}", i).as_str())
+    //     })
+    // }
 }
