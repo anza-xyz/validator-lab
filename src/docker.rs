@@ -92,26 +92,6 @@ impl DockerConfig {
         Ok(())
     }
 
-    pub fn build_client_image(
-        &self,
-        solana_root_path: &PathBuf,
-        docker_image: &DockerImage,
-        client_index: usize,
-    ) -> Result<(), Box<dyn Error>> {
-        let docker_path = solana_root_path.join(format!(
-            "docker-build/{}-{client_index}",
-            docker_image.validator_type(),
-        ));
-        self.create_base_image(
-            solana_root_path,
-            docker_image,
-            docker_path,
-            &ValidatorType::Client,
-            Some(client_index),
-        )?;
-        Ok(())
-    }
-
     fn create_base_image(
         &self,
         solana_root_path: &PathBuf,
@@ -196,7 +176,15 @@ impl DockerConfig {
             if let DeployMethod::ReleaseChannel(_) = self.deploy_method {
                 ("solana-release", "./src/scripts".to_string())
             } else {
-                ("farf", format!("./docker-build/{validator_type}"))
+                if validator_type == &ValidatorType::Client {
+                    if let Some(i) = index {
+                        ("farf", format!("./docker-build/client-{i}"))
+                    } else {
+                        ("farf", format!("./docker-build/{validator_type}"))
+                    }
+                } else {
+                    ("farf", format!("./docker-build/{validator_type}"))
+                }
             };
 
         let dockerfile = format!(
@@ -251,10 +239,10 @@ WORKDIR /home/solana
     ) -> String {
         match index {
             Some(i) => {
+                let p = solana_root_path.join(format!("config-k8s/bench-tps-{i}.yml"));
+                let p_string = p.to_string_lossy().to_string();
                 // client image
-                if solana_root_path
-                    .join(format!("config-k8s/bench-tps-{i}.yml"))
-                    .exists()
+                if p.exists()
                 {
                     info!("some (i)");
                     format!(
@@ -313,8 +301,28 @@ WORKDIR /home/solana
         Ok(())
     }
 
+    pub fn build_client_image(
+        &self,
+        solana_root_path: &PathBuf,
+        docker_image: &DockerImage,
+        client_index: usize,
+    ) -> Result<(), Box<dyn Error>> {
+        let docker_path = solana_root_path.join(format!(
+            "docker-build/{}-{client_index}",
+            docker_image.validator_type(),
+        ));
+        self.create_base_image(
+            solana_root_path,
+            docker_image,
+            docker_path,
+            &ValidatorType::Client,
+            Some(client_index),
+        )?;
+        Ok(())
+    }
+
     // // need a new image for each client
-    // pub fn push_client_images(&self, num_clients: i32) -> Result<(), Box<dyn Error>> {
+    // pub fn push_client_images(&self, num_clients: i32, client_image: &DockerImage) -> Result<(), Box<dyn Error>> {
     //     info!("Pushing client images...");
     //     (0..num_clients).into_par_iter().try_for_each(|i| {
     //         let image = format!(
