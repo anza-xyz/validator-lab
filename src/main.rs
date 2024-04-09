@@ -612,8 +612,9 @@ async fn main() {
         None,
     ));
 
+    let mut clients = vec![];
+    let validators = vec![&bootstrap_validator, &validator, &rpc_node];
     if build_config.docker_build() {
-        let validators = vec![&bootstrap_validator, &validator, &rpc_node];
         for v in &validators {
             match docker.build_image(&solana_root.get_root_path(), v.image()) {
                 Ok(_) => info!("{} image built successfully", v.validator_type()),
@@ -624,7 +625,6 @@ async fn main() {
             }
         }
 
-        let mut clients = vec![];
         for client_index in 0..client_config.num_clients {
             let client = Validator::new(DockerImage::new(
                 registry_name.clone(),
@@ -995,6 +995,27 @@ async fn main() {
             Ok(_) => info!("validator service ({validator_index}) deployed successfully"),
             Err(err) => {
                 error!("Error! Failed to deploy validator service: {validator_index}. err: {err}")
+            }
+        }
+    }
+
+    if client_config.num_clients <= 0 {
+        return;
+    }
+
+    for (client_index, client) in clients.iter_mut().enumerate() {
+        match kub_controller.create_client_secret(client_index, &config_directory) {
+            Ok(secret) => client.set_secret(secret),
+            Err(err) => {
+                error!("Failed to create Client {client_index} secret! {err}");
+                return;
+            }
+        }
+        match kub_controller.deploy_secret(&client.secret()).await {
+            Ok(_) => info!("Deployed Client {client_index} Secret"),
+            Err(err) => {
+                error!("{err}");
+                return;
             }
         }
     }

@@ -129,6 +129,21 @@ impl<'a> Kubernetes<'a> {
         k8s_helpers::create_secret_from_files(&secret_name, &key_files)
     }
 
+    // use validator identity for client 1
+    // all clients get same identity which may not be good or desirable
+    pub fn create_client_secret(
+        &self,
+        client_index: usize,
+        config_dir: &PathBuf,
+    ) -> Result<Secret, Box<dyn Error>> {
+        let secret_name = format!("client-accounts-secret-{client_index}");
+        let faucet_key_path = config_dir.join("faucet.json");
+        let identity_key_path = config_dir.join(format!("validator-identity-{}.json", 0)); // validator 0 account
+        let key_files = vec![(faucet_key_path, "faucet"), (identity_key_path, "identity")];
+
+        k8s_helpers::create_secret_from_files(&secret_name, &key_files)
+    }
+
     fn add_known_validator(&mut self, pubkey: Pubkey) {
         if let Some(ref mut known_validators) = self.validator_config.known_validators {
             known_validators.push(pubkey);
