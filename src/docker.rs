@@ -1,5 +1,8 @@
 use {
-    crate::{new_spinner_progress_bar, release::DeployMethod, ValidatorType, BUILD, ROCKET},
+    crate::{
+        new_spinner_progress_bar, release::DeployMethod, validator::Validator,
+        DockerPushThreadError, ValidatorType, BUILD, ROCKET,
+    },
     log::*,
     rayon::prelude::*,
     std::{
@@ -12,6 +15,7 @@ use {
     },
 };
 
+#[derive(Clone)]
 pub struct DockerImage {
     registry: String,
     validator_type: ValidatorType,
@@ -286,14 +290,13 @@ WORKDIR /home/solana
         }
     }
 
-    pub fn push_image(docker_image: &DockerImage) -> Result<(), Box<dyn Error>> {
+    pub fn push_image(docker_image: &DockerImage) -> Result<(), Box<dyn Error + Send>> {
         let progress_bar = new_spinner_progress_bar();
         progress_bar.set_message(format!(
-            "{ROCKET}Pushing {} image to registry...",
-            docker_image.validator_type()
+            "{ROCKET}Pushing {docker_image} image to registry...",
         ));
         let command = format!("docker push '{docker_image}'");
-        let output = match Command::new("sh")
+        let output = Command::new("sh")
             .arg("-c")
             .arg(&command)
             .stdout(Stdio::null())
@@ -301,13 +304,12 @@ WORKDIR /home/solana
             .spawn()
             .expect("Failed to execute command")
             .wait_with_output()
-        {
-            Ok(res) => Ok(res),
-            Err(err) => Err(Box::new(err) as Box<dyn Error>),
-        }?;
+            .expect("Failed to push image");
 
         if !output.status.success() {
-            return Err(output.status.to_string().into());
+            return Err(Box::new(DockerPushThreadError::from(
+                output.status.to_string(),
+            )));
         }
         progress_bar.finish_and_clear();
         Ok(())
@@ -333,20 +335,18 @@ WORKDIR /home/solana
         Ok(())
     }
 
-    // // need a new image for each client
-    // pub fn push_client_images(&self, num_clients: i32, client_image: &DockerImage) -> Result<(), Box<dyn Error>> {
-    //     info!("Pushing client images...");
-    //     (0..num_clients).into_par_iter().try_for_each(|i| {
-    //         let image = format!(
-    //             "{}/{}-{}-{}:{}",
-    //             self.image_config.registry,
-    //             ValidatorType::Client,
-    //             "image",
-    //             i,
-    //             self.image_config.tag
-    //         );
+    pub fn push_images(&self, validators: &[&Validator]) -> Result<(), Box<dyn Error + Send>> {
+        info!("Pushing images...");
+        validators
+            .par_iter()
+            .try_for_each(|validator| Self::push_image(validator.image()))
+    }
 
-    //         Self::push_image(image, format!("client-{}", i).as_str())
-    //     })
-    // }
+    // need a new image for each client
+    pub fn push_client_images(&self, clients: &[Validator]) -> Result<(), Box<dyn Error + Send>> {
+        info!("Pushing client images...");
+        clients
+            .par_iter()
+            .try_for_each(|client| Self::push_image(client.image()))
+    }
 }

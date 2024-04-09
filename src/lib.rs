@@ -6,6 +6,8 @@ use {
     reqwest::Client,
     std::{
         env,
+        error::Error,
+        fmt::{self, Display, Formatter},
         fs::File,
         io::{BufReader, Cursor, Read},
         path::{Path, PathBuf},
@@ -90,6 +92,33 @@ impl Metrics {
             "host={}:{},db={},u={},p={}",
             self.host, self.port, self.database, self.username, self.password
         )
+    }
+}
+
+#[derive(Debug)]
+struct DockerPushThreadError {
+    message: String,
+}
+
+impl Display for DockerPushThreadError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl Error for DockerPushThreadError {}
+
+impl From<String> for DockerPushThreadError {
+    fn from(message: String) -> Self {
+        DockerPushThreadError { message }
+    }
+}
+
+impl From<&str> for DockerPushThreadError {
+    fn from(message: &str) -> Self {
+        DockerPushThreadError {
+            message: message.to_string(),
+        }
     }
 }
 

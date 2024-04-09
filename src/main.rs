@@ -613,22 +613,12 @@ async fn main() {
     ));
 
     if build_config.docker_build() {
-        let validators = vec![&bootstrap_validator]; //, &validator]; //, &rpc_node];
+        let validators = vec![&bootstrap_validator, &validator, &rpc_node];
         for v in &validators {
             match docker.build_image(&solana_root.get_root_path(), v.image()) {
                 Ok(_) => info!("{} image built successfully", v.validator_type()),
                 Err(err) => {
                     error!("Failed to build docker image {err}");
-                    return;
-                }
-            }
-        }
-
-        for v in &validators {
-            match DockerConfig::push_image(v.image()) {
-                Ok(_) => info!("{} image pushed successfully", v.validator_type()),
-                Err(err) => {
-                    error!("Failed to push docker image {err}");
                     return;
                 }
             }
@@ -644,7 +634,8 @@ async fn main() {
                 Some(client_index),
             ));
 
-            // need new image for each client
+            // need new image for each client since they each hold
+            // their own client-accounts.yml
             match docker.build_client_image(
                 &solana_root.get_root_path(),
                 &client.image(),
@@ -660,32 +651,21 @@ async fn main() {
             clients.push(client);
         }
 
-        // match docker.push_client_images(client_config.num_clients, client.image()) {
-        //     Ok(_) => info!("Client image pushed successfully"),
-        //     Err(err) => {
-        //         error!("Exiting........ {}", err);
-        //         return;
-        //     }
-        // }
+        match docker.push_images(&validators) {
+            Ok(_) => info!("Validator images pushed successfully"),
+            Err(err) => {
+                error!("Failed to push Validator docker image {err}");
+                return;
+            }
+        }
 
-        // if client_config.num_clients > 0 {
-        //     // need new image for each client
-        //     match docker.build_client_images(&solana_root.get_root_path(), &client.image(), client_config.num_clients) {
-        //         Ok(_) => info!("Client image built successfully"),
-        //         Err(err) => {
-        //             error!("Failed to build client image {err}");
-        //             return;
-        //         }
-        //     }
-
-        //     match docker.push_client_images(client_config.num_clients) {
-        //         Ok(_) => info!("Client image pushed successfully"),
-        //         Err(err) => {
-        //             error!("Exiting........ {}", err);
-        //             return;
-        //         }
-        //     }
-        // }
+        match docker.push_client_images(&clients) {
+            Ok(_) => info!("Client image pushed successfully"),
+            Err(err) => {
+                error!("Failed to push Client docker image {err}");
+                return;
+            }
+        }
     }
 
     // metrics secret create once and use by all pods

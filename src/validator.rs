@@ -9,6 +9,7 @@ pub enum LabelType {
     ValidatorService,
 }
 
+#[derive(Clone)]
 pub struct Validator {
     validator_type: ValidatorType,
     image: DockerImage,
