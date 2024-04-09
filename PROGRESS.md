@@ -29,12 +29,12 @@
     - [x] Bootstrap
     - [x] Validator (regular)
     - [x] RPC nodes
-    - [ ] Client
+    - [x] Client
 - [ ] Create & Deploy Replica Set
     - [x] Bootstrap
     - [x] Validator (regular)
     - [x] RPC nodes
-    - [ ] Client
+    - [x] Client
 - [ ] Create & Deploy Services
     - [x] Bootstrap
     - [x] Validator (regular)

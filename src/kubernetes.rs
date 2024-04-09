@@ -581,4 +581,49 @@ impl<'a> Kubernetes<'a> {
             Some(readiness_probe),
         )
     }
+
+    pub fn create_client_replica_set(
+        &mut self,
+        image: &DockerImage,
+        secret_name: Option<String>,
+        label_selector: &BTreeMap<String, String>,
+        client_index: usize,
+    ) -> Result<ReplicaSet, Box<dyn Error>> {
+        let mut env_vars = self.set_non_bootstrap_environment_variables();
+        if self.metrics.is_some() {
+            env_vars.push(self.get_metrics_env_var_secret())
+        }
+        env_vars.append(&mut self.set_load_balancer_environment_variables());
+
+        let accounts_volume = Some(vec![Volume {
+            name: format!("client-accounts-volume-{}", client_index),
+            secret: Some(SecretVolumeSource {
+                secret_name,
+                ..Default::default()
+            }),
+            ..Default::default()
+        }]);
+
+        let accounts_volume_mount = Some(vec![VolumeMount {
+            name: format!("client-accounts-volume-{}", client_index),
+            mount_path: "/home/solana/client-accounts".to_string(),
+            ..Default::default()
+        }]);
+
+        let command = vec!["/home/solana/k8s-cluster-scripts/client-startup-script.sh".to_string()];
+        // command.extend(self.generate_client_command_flags());
+
+        k8s_helpers::create_replica_set(
+            &format!("{}-{client_index}", ValidatorType::Client),
+            self.namespace.as_str(),
+            label_selector,
+            image,
+            env_vars,
+            &command,
+            accounts_volume,
+            accounts_volume_mount,
+            self.pod_requests.requests.clone(),
+            None,
+        )
+    }
 }

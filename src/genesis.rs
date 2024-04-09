@@ -177,6 +177,9 @@ impl Genesis {
         validator_type: ValidatorType,
         number_of_accounts: usize,
     ) -> Result<(), Box<dyn Error>> {
+        if number_of_accounts == 0 {
+            return Err(format!("0 accounts to generate for {validator_type}").into());
+        }
         if validator_type == ValidatorType::Client {
             return Err("Client valdiator_type in generate_accounts not allowed".into());
         }

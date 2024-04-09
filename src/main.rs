@@ -1018,5 +1018,38 @@ async fn main() {
                 return;
             }
         }
+
+        client.add_label(
+            "client/name",
+            format!("client-{}", client_index),
+            LabelType::ValidatorReplicaSet,
+        );
+
+        let client_replica_set = match kub_controller.create_client_replica_set(
+            client.image(),
+            client.secret().metadata.name.clone(),
+            client.replica_set_labels(),
+            client_index,
+        ) {
+            Ok(replica_set) => replica_set,
+            Err(err) => {
+                error!("Error creating client replicas_set: {err}");
+                return;
+            }
+        };
+
+        let _ = match kub_controller
+            .deploy_replicas_set(&client_replica_set)
+            .await
+        {
+            Ok(rs) => {
+                info!("client replica set ({client_index}) deployed successfully",);
+                rs.metadata.name.unwrap()
+            }
+            Err(err) => {
+                error!("Error! Failed to deploy client replica set: {client_index}. err: {err}");
+                return;
+            }
+        };
     }
 }
