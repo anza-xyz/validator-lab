@@ -581,82 +581,83 @@ async fn main() {
         deploy_method,
     );
 
+    let registry_name = matches.value_of("registry_name").unwrap().to_string();
+    let image_name = matches.value_of("image_name").unwrap().to_string();
+    let image_tag = matches
+        .value_of("image_tag")
+        .unwrap_or_default()
+        .to_string();
+
     let mut bootstrap_validator = Validator::new(DockerImage::new(
-        matches.value_of("registry_name").unwrap().to_string(),
+        registry_name.clone(),
         ValidatorType::Bootstrap,
-        matches.value_of("image_name").unwrap().to_string(),
-        matches
-            .value_of("image_tag")
-            .unwrap_or_default()
-            .to_string(),
+        image_name.clone(),
+        image_tag.clone(),
+        None,
     ));
 
-    // //TODO do not parse twice
-    // let mut validator = Validator::new(DockerImage::new(
-    //     matches.value_of("registry_name").unwrap().to_string(),
-    //     ValidatorType::Standard,
-    //     matches.value_of("image_name").unwrap().to_string(),
-    //     matches
-    //         .value_of("image_tag")
-    //         .unwrap_or_default()
-    //         .to_string(),
-    // ));
+    let mut validator = Validator::new(DockerImage::new(
+        registry_name.clone(),
+        ValidatorType::Standard,
+        image_name.clone(),
+        image_tag.clone(),
+        None,
+    ));
 
-    // //TODO do not parse thrice
-    // let mut rpc_node = Validator::new(DockerImage::new(
-    //     matches.value_of("registry_name").unwrap().to_string(),
-    //     ValidatorType::RPC,
-    //     matches.value_of("image_name").unwrap().to_string(),
-    //     matches
-    //         .value_of("image_tag")
-    //         .unwrap_or_default()
-    //         .to_string(),
-    // ));
-
-    //TODO do not parse four times
-    // we need a new image for each client!!!
-    let mut client = Validator::new(DockerImage::new(
-        matches.value_of("registry_name").unwrap().to_string(),
-        ValidatorType::Client,
-        matches.value_of("image_name").unwrap().to_string(),
-        matches
-            .value_of("image_tag")
-            .unwrap_or_default()
-            .to_string(),
+    let mut rpc_node = Validator::new(DockerImage::new(
+        registry_name.clone(),
+        ValidatorType::RPC,
+        image_name.clone(),
+        image_tag.clone(),
+        None,
     ));
 
     if build_config.docker_build() {
-        // let validators = vec![&bootstrap_validator];//, &validator, &rpc_node];
-        // for v in &validators {
-        //     match docker.build_image(&solana_root.get_root_path(), v.image()) {
-        //         Ok(_) => info!("{} image built successfully", v.validator_type()),
-        //         Err(err) => {
-        //             error!("Failed to build docker image {err}");
-        //             return;
-        //         }
-        //     }
-        // }
+        let validators = vec![&bootstrap_validator]; //, &validator]; //, &rpc_node];
+        for v in &validators {
+            match docker.build_image(&solana_root.get_root_path(), v.image()) {
+                Ok(_) => info!("{} image built successfully", v.validator_type()),
+                Err(err) => {
+                    error!("Failed to build docker image {err}");
+                    return;
+                }
+            }
+        }
 
-        // for v in &validators {
-        //     match DockerConfig::push_image(v.image()) {
-        //         Ok(_) => info!("{} image pushed successfully", v.validator_type()),
-        //         Err(err) => {
-        //             error!("Failed to push docker image {err}");
-        //             return;
-        //         }
-        //     }
-        // }
+        for v in &validators {
+            match DockerConfig::push_image(v.image()) {
+                Ok(_) => info!("{} image pushed successfully", v.validator_type()),
+                Err(err) => {
+                    error!("Failed to push docker image {err}");
+                    return;
+                }
+            }
+        }
 
+        let mut clients = vec![];
         for client_index in 0..client_config.num_clients {
-            info!("here!");
+            let client = Validator::new(DockerImage::new(
+                registry_name.clone(),
+                ValidatorType::Client,
+                image_name.clone(),
+                image_tag.clone(),
+                Some(client_index),
+            ));
+
             // need new image for each client
-            match docker.build_client_image(&solana_root.get_root_path(), &client.image(), client_index) {
+            match docker.build_client_image(
+                &solana_root.get_root_path(),
+                &client.image(),
+                client_index,
+            ) {
                 Ok(_) => info!("Client image built successfully"),
                 Err(err) => {
                     error!("Failed to build client image {err}");
                     return;
                 }
             }
+
+            clients.push(client);
         }
 
         // match docker.push_client_images(client_config.num_clients, client.image()) {
@@ -820,201 +821,201 @@ async fn main() {
         thread::sleep(Duration::from_secs(1));
     }
 
-    // if num_rpc_nodes > 0 {
-    //     let mut rpc_nodes = vec![];
-    //     for rpc_index in 0..num_rpc_nodes {
-    //         match kub_controller.create_rpc_secret(rpc_index, &config_directory) {
-    //             Ok(secret) => rpc_node.set_secret(secret),
-    //             Err(err) => {
-    //                 error!("Failed to create RPC node {rpc_index} secret! {err}");
-    //                 return;
-    //             }
-    //         }
-    //         match kub_controller.deploy_secret(&rpc_node.secret()).await {
-    //             Ok(_) => info!("Deployed RPC node {rpc_index} Secret"),
-    //             Err(err) => {
-    //                 error!("{err}");
-    //                 return;
-    //             }
-    //         }
-    //         let identity_path =
-    //             config_directory.join(format!("rpc-node-identity-{rpc_index}.json"));
-    //         let rpc_keypair =
-    //             read_keypair_file(identity_path).expect("Failed to read rpc-node keypair file");
+    if num_rpc_nodes > 0 {
+        let mut rpc_nodes = vec![];
+        for rpc_index in 0..num_rpc_nodes {
+            match kub_controller.create_rpc_secret(rpc_index, &config_directory) {
+                Ok(secret) => rpc_node.set_secret(secret),
+                Err(err) => {
+                    error!("Failed to create RPC node {rpc_index} secret! {err}");
+                    return;
+                }
+            }
+            match kub_controller.deploy_secret(&rpc_node.secret()).await {
+                Ok(_) => info!("Deployed RPC node {rpc_index} Secret"),
+                Err(err) => {
+                    error!("{err}");
+                    return;
+                }
+            }
+            let identity_path =
+                config_directory.join(format!("rpc-node-identity-{rpc_index}.json"));
+            let rpc_keypair =
+                read_keypair_file(identity_path).expect("Failed to read rpc-node keypair file");
 
-    //         rpc_node.add_label(
-    //             "rpc-node/name",
-    //             &format!("rpc-node-{rpc_index}"),
-    //             LabelType::ValidatorReplicaSet,
-    //         );
+            rpc_node.add_label(
+                "rpc-node/name",
+                &format!("rpc-node-{rpc_index}"),
+                LabelType::ValidatorReplicaSet,
+            );
 
-    //         rpc_node.add_label(
-    //             "rpc-node/type",
-    //             rpc_node.validator_type().to_string(),
-    //             LabelType::ValidatorReplicaSet,
-    //         );
+            rpc_node.add_label(
+                "rpc-node/type",
+                rpc_node.validator_type().to_string(),
+                LabelType::ValidatorReplicaSet,
+            );
 
-    //         rpc_node.add_label(
-    //             "rpc-node/identity",
-    //             rpc_keypair.pubkey().to_string(),
-    //             LabelType::ValidatorReplicaSet,
-    //         );
+            rpc_node.add_label(
+                "rpc-node/identity",
+                rpc_keypair.pubkey().to_string(),
+                LabelType::ValidatorReplicaSet,
+            );
 
-    //         rpc_node.add_label(
-    //             "load-balancer/name",
-    //             "load-balancer-selector",
-    //             LabelType::ValidatorReplicaSet,
-    //         );
+            rpc_node.add_label(
+                "load-balancer/name",
+                "load-balancer-selector",
+                LabelType::ValidatorReplicaSet,
+            );
 
-    //         let rpc_replica_set = match kub_controller.create_rpc_replica_set(
-    //             rpc_node.image(),
-    //             rpc_node.secret().metadata.name.clone(),
-    //             rpc_node.replica_set_labels(),
-    //             rpc_index,
-    //         ) {
-    //             Ok(replica_set) => replica_set,
-    //             Err(err) => {
-    //                 error!("Error creating rpc node replicas_set: {err}");
-    //                 return;
-    //             }
-    //         };
+            let rpc_replica_set = match kub_controller.create_rpc_replica_set(
+                rpc_node.image(),
+                rpc_node.secret().metadata.name.clone(),
+                rpc_node.replica_set_labels(),
+                rpc_index,
+            ) {
+                Ok(replica_set) => replica_set,
+                Err(err) => {
+                    error!("Error creating rpc node replicas_set: {err}");
+                    return;
+                }
+            };
 
-    //         // deploy rpc node replica set
-    //         let rpc_node_name = match kub_controller.deploy_replicas_set(&rpc_replica_set).await {
-    //             Ok(rs) => {
-    //                 info!("rpc node replica set ({rpc_index}) deployed successfully");
-    //                 rs.metadata.name.unwrap()
-    //             }
-    //             Err(err) => {
-    //                 error!("Error! Failed to deploy rpc node replica set: {rpc_index}. err: {err}");
-    //                 return;
-    //             }
-    //         };
-    //         rpc_nodes.push(rpc_node_name);
+            // deploy rpc node replica set
+            let rpc_node_name = match kub_controller.deploy_replicas_set(&rpc_replica_set).await {
+                Ok(rs) => {
+                    info!("rpc node replica set ({rpc_index}) deployed successfully");
+                    rs.metadata.name.unwrap()
+                }
+                Err(err) => {
+                    error!("Error! Failed to deploy rpc node replica set: {rpc_index}. err: {err}");
+                    return;
+                }
+            };
+            rpc_nodes.push(rpc_node_name);
 
-    //         rpc_node.add_label(
-    //             "service/name",
-    //             &format!("rpc-node-selector-{rpc_index}"),
-    //             LabelType::ValidatorService,
-    //         );
+            rpc_node.add_label(
+                "service/name",
+                &format!("rpc-node-selector-{rpc_index}"),
+                LabelType::ValidatorService,
+            );
 
-    //         let rpc_service = kub_controller.create_validator_service(
-    //             format!("rpc-node-selector-{rpc_index}").as_str(),
-    //             rpc_node.service_labels(),
-    //         );
-    //         match kub_controller.deploy_service(&rpc_service).await {
-    //             Ok(_) => info!("rpc node service deployed successfully"),
-    //             Err(err) => error!("Error! Failed to deploy rpc node service. err: {err}"),
-    //         }
-    //     }
+            let rpc_service = kub_controller.create_validator_service(
+                format!("rpc-node-selector-{rpc_index}").as_str(),
+                rpc_node.service_labels(),
+            );
+            match kub_controller.deploy_service(&rpc_service).await {
+                Ok(_) => info!("rpc node service deployed successfully"),
+                Err(err) => error!("Error! Failed to deploy rpc node service. err: {err}"),
+            }
+        }
 
-    //     // wait for at least one rpc node to deploy
-    //     loop {
-    //         let mut one_rpc_node_ready = false;
-    //         for rpc_node in &rpc_nodes {
-    //             match kub_controller
-    //                 .check_replica_set_ready(rpc_node.as_str())
-    //                 .await
-    //             {
-    //                 Ok(ready) => {
-    //                     if ready {
-    //                         one_rpc_node_ready = true;
-    //                         break;
-    //                     }
-    //                 } // Continue the loop if replica set is not ready: Ok(false)
-    //                 Err(err) => panic!(
-    //                     "Error occurred while checking rpc node replica set readiness: {err}"
-    //                 ),
-    //             }
-    //         }
+        // wait for at least one rpc node to deploy
+        loop {
+            let mut one_rpc_node_ready = false;
+            for rpc_node in &rpc_nodes {
+                match kub_controller
+                    .check_replica_set_ready(rpc_node.as_str())
+                    .await
+                {
+                    Ok(ready) => {
+                        if ready {
+                            one_rpc_node_ready = true;
+                            break;
+                        }
+                    } // Continue the loop if replica set is not ready: Ok(false)
+                    Err(err) => panic!(
+                        "Error occurred while checking rpc node replica set readiness: {err}"
+                    ),
+                }
+            }
 
-    //         if one_rpc_node_ready {
-    //             break;
-    //         }
+            if one_rpc_node_ready {
+                break;
+            }
 
-    //         info!("no rpc replica sets ready yet");
-    //         thread::sleep(Duration::from_secs(10));
-    //     }
-    //     info!(">= 1 rpc node ready");
-    // }
+            info!("no rpc replica sets ready yet");
+            thread::sleep(Duration::from_secs(10));
+        }
+        info!(">= 1 rpc node ready");
+    }
 
-    // // Create and deploy validators secrets/selectors
-    // for validator_index in 0..num_validators {
-    //     match kub_controller.create_validator_secret(validator_index, &config_directory) {
-    //         Ok(secret) => validator.set_secret(secret),
-    //         Err(err) => {
-    //             error!("Failed to create validator secret! {err}");
-    //             return;
-    //         }
-    //     };
+    // Create and deploy validators secrets/selectors
+    for validator_index in 0..num_validators {
+        match kub_controller.create_validator_secret(validator_index, &config_directory) {
+            Ok(secret) => validator.set_secret(secret),
+            Err(err) => {
+                error!("Failed to create validator secret! {err}");
+                return;
+            }
+        };
 
-    //     match kub_controller.deploy_secret(&validator.secret()).await {
-    //         Ok(_) => info!("Deployed validator {validator_index} secret"),
-    //         Err(err) => {
-    //             error!("{err}");
-    //             return;
-    //         }
-    //     }
+        match kub_controller.deploy_secret(&validator.secret()).await {
+            Ok(_) => info!("Deployed validator {validator_index} secret"),
+            Err(err) => {
+                error!("{err}");
+                return;
+            }
+        }
 
-    //     let identity_path =
-    //         config_directory.join(format!("validator-identity-{validator_index}.json"));
-    //     let validator_keypair =
-    //         read_keypair_file(identity_path).expect("Failed to read validator keypair file");
+        let identity_path =
+            config_directory.join(format!("validator-identity-{validator_index}.json"));
+        let validator_keypair =
+            read_keypair_file(identity_path).expect("Failed to read validator keypair file");
 
-    //     validator.add_label(
-    //         "validator/name",
-    //         &format!("validator-{validator_index}"),
-    //         LabelType::ValidatorReplicaSet,
-    //     );
-    //     validator.add_label(
-    //         "validator/type",
-    //         validator.validator_type().to_string(),
-    //         LabelType::ValidatorReplicaSet,
-    //     );
-    //     validator.add_label(
-    //         "validator/identity",
-    //         validator_keypair.pubkey().to_string(),
-    //         LabelType::ValidatorReplicaSet,
-    //     );
+        validator.add_label(
+            "validator/name",
+            &format!("validator-{validator_index}"),
+            LabelType::ValidatorReplicaSet,
+        );
+        validator.add_label(
+            "validator/type",
+            validator.validator_type().to_string(),
+            LabelType::ValidatorReplicaSet,
+        );
+        validator.add_label(
+            "validator/identity",
+            validator_keypair.pubkey().to_string(),
+            LabelType::ValidatorReplicaSet,
+        );
 
-    //     let validator_replica_set = match kub_controller.create_validator_replica_set(
-    //         validator.image(),
-    //         validator.secret().metadata.name.clone(),
-    //         validator.replica_set_labels(),
-    //         validator_index,
-    //     ) {
-    //         Ok(replica_set) => replica_set,
-    //         Err(err) => {
-    //             error!("Error creating validator replicas_set: {err}");
-    //             return;
-    //         }
-    //     };
+        let validator_replica_set = match kub_controller.create_validator_replica_set(
+            validator.image(),
+            validator.secret().metadata.name.clone(),
+            validator.replica_set_labels(),
+            validator_index,
+        ) {
+            Ok(replica_set) => replica_set,
+            Err(err) => {
+                error!("Error creating validator replicas_set: {err}");
+                return;
+            }
+        };
 
-    //     let _ = match kub_controller
-    //         .deploy_replicas_set(&validator_replica_set)
-    //         .await
-    //     {
-    //         Ok(rs) => {
-    //             info!("validator replica set ({validator_index}) deployed successfully");
-    //             rs.metadata.name.unwrap()
-    //         }
-    //         Err(err) => {
-    //             error!(
-    //                 "Error! Failed to deploy validator replica set: {validator_index}. err: {err}"
-    //             );
-    //             return;
-    //         }
-    //     };
+        let _ = match kub_controller
+            .deploy_replicas_set(&validator_replica_set)
+            .await
+        {
+            Ok(rs) => {
+                info!("validator replica set ({validator_index}) deployed successfully");
+                rs.metadata.name.unwrap()
+            }
+            Err(err) => {
+                error!(
+                    "Error! Failed to deploy validator replica set: {validator_index}. err: {err}"
+                );
+                return;
+            }
+        };
 
-    //     let validator_service = kub_controller.create_validator_service(
-    //         &format!("validator-service-{validator_index}"),
-    //         validator.replica_set_labels(),
-    //     );
-    //     match kub_controller.deploy_service(&validator_service).await {
-    //         Ok(_) => info!("validator service ({validator_index}) deployed successfully"),
-    //         Err(err) => {
-    //             error!("Error! Failed to deploy validator service: {validator_index}. err: {err}")
-    //         }
-    //     }
-    // }
+        let validator_service = kub_controller.create_validator_service(
+            &format!("validator-service-{validator_index}"),
+            validator.replica_set_labels(),
+        );
+        match kub_controller.deploy_service(&validator_service).await {
+            Ok(_) => info!("validator service ({validator_index}) deployed successfully"),
+            Err(err) => {
+                error!("Error! Failed to deploy validator service: {validator_index}. err: {err}")
+            }
+        }
+    }
 }

@@ -17,6 +17,7 @@ pub struct DockerImage {
     validator_type: ValidatorType,
     image_name: String,
     tag: String,
+    client_index: Option<usize>,
 }
 
 impl DockerImage {
@@ -26,12 +27,14 @@ impl DockerImage {
         validator_type: ValidatorType,
         image_name: String,
         tag: String,
+        client_index: Option<usize>,
     ) -> Self {
         DockerImage {
             registry,
             validator_type,
             image_name,
             tag,
+            client_index,
         }
     }
 
@@ -43,11 +46,18 @@ impl DockerImage {
 // Put DockerImage in format for building, pushing, and pulling
 impl Display for DockerImage {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{}/{}-{}:{}",
-            self.registry, self.validator_type, self.image_name, self.tag
-        )
+        match self.client_index {
+            Some(index) => write!(
+                f,
+                "{}/{}-{}-{}:{}",
+                self.registry, self.validator_type, index, self.image_name, self.tag
+            ),
+            None => write!(
+                f,
+                "{}/{}-{}:{}",
+                self.registry, self.validator_type, self.image_name, self.tag
+            ),
+        }
     }
 }
 
@@ -172,20 +182,26 @@ impl DockerConfig {
             }
         }
 
-        let (solana_build_directory, startup_script_directory) =
-            if let DeployMethod::ReleaseChannel(_) = self.deploy_method {
-                ("solana-release", "./src/scripts".to_string())
-            } else {
-                if validator_type == &ValidatorType::Client {
-                    if let Some(i) = index {
-                        ("farf", format!("./docker-build/client-{i}"))
-                    } else {
-                        ("farf", format!("./docker-build/{validator_type}"))
-                    }
-                } else {
-                    ("farf", format!("./docker-build/{validator_type}"))
+        let solana_build_directory = match self.deploy_method {
+            DeployMethod::ReleaseChannel(_) => "solana-release",
+            DeployMethod::Local(_) => "farf",
+        };
+
+        let startup_script_directory = match self.deploy_method {
+            DeployMethod::ReleaseChannel(_) => "./src/scripts".to_string(),
+            DeployMethod::Local(_) => match validator_type {
+                ValidatorType::Bootstrap | ValidatorType::RPC | ValidatorType::Standard => {
+                    format!("./docker-build/{validator_type}")
                 }
-            };
+                ValidatorType::Client => {
+                    if index.is_some() {
+                        format!("./docker-build/client-{}", index.unwrap())
+                    } else {
+                        return Err("Error! Client index is None".into());
+                    }
+                }
+            },
+        };
 
         let dockerfile = format!(
             r#"
@@ -239,19 +255,17 @@ WORKDIR /home/solana
     ) -> String {
         match index {
             Some(i) => {
-                let p = solana_root_path.join(format!("config-k8s/bench-tps-{i}.yml"));
-                let p_string = p.to_string_lossy().to_string();
                 // client image
-                if p.exists()
+                if solana_root_path
+                    .join(format!("config-k8s/bench-tps-{i}.yml"))
+                    .exists()
                 {
-                    info!("some (i)");
                     format!(
                         r#"
         COPY --chown=solana:solana ./config-k8s/bench-tps-{i}.yml /home/solana/client-accounts.yml
                     "#,
                     )
                 } else {
-                    info!("some(i). but path doesn't exist");
                     "".to_string()
                 }
             }
@@ -261,13 +275,11 @@ WORKDIR /home/solana
                     .join("config-k8s/client-accounts.yml")
                     .exists()
                 {
-                    info!("index is None. path exists");
                     r#"
         COPY --chown=solana:solana ./config-k8s/client-accounts.yml /home/solana
                     "#
                     .to_string()
                 } else {
-                    info!("index is none. path doesn't exist");
                     "".to_string()
                 }
             }
