@@ -1,6 +1,7 @@
 use {
     crate::{
-        docker::DockerImage, k8s_helpers, validator_config::ValidatorConfig, Metrics, ValidatorType,
+        client_config::ClientConfig, docker::DockerImage, k8s_helpers,
+        validator_config::ValidatorConfig, Metrics, ValidatorType,
     },
     k8s_openapi::{
         api::{
@@ -46,6 +47,7 @@ pub struct Kubernetes<'a> {
     validator_config: &'a mut ValidatorConfig,
     pod_requests: PodRequests,
     pub metrics: Option<Metrics>,
+    client_config: ClientConfig,
 }
 
 impl<'a> Kubernetes<'a> {
@@ -54,6 +56,7 @@ impl<'a> Kubernetes<'a> {
         validator_config: &'a mut ValidatorConfig,
         pod_requests: PodRequests,
         metrics: Option<Metrics>,
+        client_config: ClientConfig,
     ) -> Kubernetes<'a> {
         Self {
             k8s_client: Client::try_default().await.unwrap(),
@@ -61,6 +64,7 @@ impl<'a> Kubernetes<'a> {
             validator_config,
             pod_requests,
             metrics,
+            client_config,
         }
     }
 
@@ -260,6 +264,32 @@ impl<'a> Kubernetes<'a> {
         }
 
         self.add_known_validators_if_exists(&mut flags);
+
+        flags
+    }
+
+    fn generate_client_command_flags(&self) -> Vec<String> {
+        let mut flags = vec![];
+
+        flags.push(self.client_config.client_to_run.clone()); //client to run
+        if let Some(bench_tps_args) = &self.client_config.bench_tps_args {
+            flags.push(bench_tps_args.join(" "));
+        }
+
+        flags.push(self.client_config.client_type.clone());
+
+        if let Some(target_node) = self.client_config.target_node {
+            flags.push("--target-node".to_string());
+            flags.push(target_node.to_string());
+        }
+
+        flags.push("--duration".to_string());
+        flags.push(self.client_config.duration.to_string());
+
+        if let Some(num_nodes) = self.client_config.num_nodes {
+            flags.push("--num-nodes".to_string());
+            flags.push(num_nodes.to_string());
+        }
 
         flags
     }
@@ -602,8 +632,9 @@ impl<'a> Kubernetes<'a> {
             ..Default::default()
         }]);
 
-        let command = vec!["/home/solana/k8s-cluster-scripts/client-startup-script.sh".to_string()];
-        // command.extend(self.generate_client_command_flags());
+        let mut command =
+            vec!["/home/solana/k8s-cluster-scripts/client-startup-script.sh".to_string()];
+        command.extend(self.generate_client_command_flags());
 
         k8s_helpers::create_replica_set(
             &format!("{}-{client_index}", ValidatorType::Client),
