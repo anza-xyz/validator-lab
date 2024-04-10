@@ -11,7 +11,7 @@ use {
     strum_macros::{EnumString, IntoStaticStr, VariantNames},
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum DeployMethod {
     Local(String),
     ReleaseChannel(String),
@@ -29,6 +29,8 @@ pub struct BuildConfig {
     deploy_method: DeployMethod,
     build_type: BuildType,
     solana_root_path: PathBuf,
+    docker_build: bool,
+    build_path: PathBuf,
 }
 
 impl BuildConfig {
@@ -36,12 +38,28 @@ impl BuildConfig {
         deploy_method: DeployMethod,
         build_type: BuildType,
         solana_root_path: &Path,
+        docker_build: bool,
     ) -> Self {
-        Self {
+        let build_path = match deploy_method {
+            DeployMethod::Local(_) => solana_root_path.join("farf/bin"),
+            DeployMethod::ReleaseChannel(_) => solana_root_path.join("solana-release/bin"),
+        };
+
+        BuildConfig {
             deploy_method,
             build_type,
             solana_root_path: solana_root_path.to_path_buf(),
+            docker_build,
+            build_path,
         }
+    }
+
+    pub fn build_path(&self) -> PathBuf {
+        self.build_path.clone()
+    }
+
+    pub fn docker_build(&self) -> bool {
+        self.docker_build
     }
 
     pub async fn prepare(&self) -> Result<(), Box<dyn Error>> {
@@ -64,7 +82,7 @@ impl BuildConfig {
     async fn setup_tar_deploy(&self, release_channel: &String) -> Result<PathBuf, Box<dyn Error>> {
         let file_name = "solana-release";
         let tar_filename = format!("{file_name}.tar.bz2");
-        info!("tar file: {}", tar_filename);
+        info!("tar file: {tar_filename}");
         self.download_release_from_channel(&tar_filename, release_channel)
             .await?;
 
@@ -128,14 +146,14 @@ impl BuildConfig {
             let tag_object = solana_repo.revparse_single(tag)?.id();
             // Check if the commit associated with the tag is the same as the current commit
             if tag_object == commit {
-                info!("The current commit is associated with tag: {}", tag);
+                info!("The current commit is associated with tag: {tag}");
                 note = tag_object.to_string();
                 break;
             }
         }
 
         // Write to branch/tag and commit to version.yml
-        let content = format!("channel: devbuild {}\ncommit: {}", note, commit);
+        let content = format!("channel: devbuild {note}\ncommit: {commit}");
         std::fs::write(self.solana_root_path.join("farf/version.yml"), content)
             .expect("Failed to write version.yml");
 
@@ -148,22 +166,19 @@ impl BuildConfig {
         tar_filename: &str,
         release_channel: &String,
     ) -> Result<(), Box<dyn Error>> {
-        info!("Downloading release from channel: {}", release_channel);
+        info!("Downloading release from channel: {release_channel}");
         let file_path = self.solana_root_path.join(tar_filename);
         // Remove file
         if let Err(err) = fs::remove_file(&file_path) {
             if err.kind() != std::io::ErrorKind::NotFound {
-                return Err(format!("{}: {:?}", "Error while removing file:", err).into());
+                return Err(format!("{err}: {:?}", "Error while removing file:").into());
             }
         }
 
         let download_url = format!(
-            "{}{}{}",
-            "https://release.solana.com/",
-            release_channel,
-            "/solana-release-x86_64-unknown-linux-gnu.tar.bz2"
+            "https://release.solana.com/{release_channel}/solana-release-x86_64-unknown-linux-gnu.tar.bz2"
         );
-        info!("download_url: {}", download_url);
+        info!("download_url: {download_url}");
 
         download_to_temp(
             download_url.as_str(),

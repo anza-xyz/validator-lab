@@ -4,6 +4,7 @@ use {
     std::fs,
     strum::VariantNames,
     validator_lab::{
+        docker::DockerConfig,
         genesis::{Genesis, GenesisFlags},
         kubernetes::Kubernetes,
         release::{BuildConfig, BuildType, DeployMethod},
@@ -76,7 +77,7 @@ fn parse_matches() -> clap::ArgMatches {
             Arg::with_name("enable_warmup_epochs")
                 .long("enable-warmup-epochs")
                 .takes_value(true)
-                .possible_values(&["true", "false"])
+                .possible_values(["true", "false"])
                 .default_value("true")
                 .help("Genesis config. enable warmup epoch. defaults to true"),
         )
@@ -89,7 +90,7 @@ fn parse_matches() -> clap::ArgMatches {
         .arg(
             Arg::with_name("cluster_type")
                 .long("cluster-type")
-                .possible_values(&["development", "devnet", "testnet", "mainnet-beta"])
+                .possible_values(["development", "devnet", "testnet", "mainnet-beta"])
                 .takes_value(true)
                 .default_value("development")
                 .help(
@@ -107,6 +108,40 @@ fn parse_matches() -> clap::ArgMatches {
                 .long("bootstrap-validator-stake-sol")
                 .takes_value(true)
                 .help("Genesis config. bootstrap validator stake sol"),
+        )
+        //Docker config
+        .arg(
+            Arg::with_name("skip_docker_build")
+                .long("skip-docker-build")
+                .help("Skips build Docker images"),
+        )
+        .arg(
+            Arg::with_name("registry_name")
+                .long("registry")
+                .takes_value(true)
+                .required(true)
+                .help("Registry to push docker image to"),
+        )
+        .arg(
+            Arg::with_name("image_name")
+                .long("image-name")
+                .takes_value(true)
+                .default_value("k8s-cluster-image")
+                .help("Docker image name. Will be prepended with validator_type (bootstrap or validator)"),
+        )
+        .arg(
+            Arg::with_name("base_image")
+                .long("base-image")
+                .takes_value(true)
+                .default_value("ubuntu:20.04")
+                .help("Docker base image"),
+        )
+        .arg(
+            Arg::with_name("image_tag")
+                .long("tag")
+                .takes_value(true)
+                .default_value("latest")
+                .help("Docker image tag."),
         )
         .get_matches()
 }
@@ -180,7 +215,12 @@ async fn main() {
         }
     }
 
-    let build_config = BuildConfig::new(deploy_method, build_type, solana_root.get_root_path());
+    let build_config = BuildConfig::new(
+        deploy_method.clone(),
+        build_type,
+        solana_root.get_root_path(),
+        !matches.is_present("skip_docker_build"),
+    );
 
     let genesis_flags = GenesisFlags {
         hashes_per_tick: matches
@@ -235,14 +275,14 @@ async fn main() {
     match build_config.prepare().await {
         Ok(_) => info!("Validator setup prepared successfully"),
         Err(err) => {
-            error!("Error: {}", err);
+            error!("Error: {err}");
             return;
         }
     }
 
     let mut genesis = Genesis::new(solana_root.get_root_path(), genesis_flags);
     match genesis.generate_faucet() {
-        Ok(_) => (),
+        Ok(_) => info!("Generated faucet account"),
         Err(err) => {
             error!("generate faucet error! {err}");
             return;
@@ -250,7 +290,7 @@ async fn main() {
     }
 
     match genesis.generate_accounts(ValidatorType::Bootstrap, 1) {
-        Ok(_) => (),
+        Ok(_) => info!("Generated bootstrap account"),
         Err(err) => {
             error!("generate accounts error! {err}");
             return;
@@ -259,10 +299,36 @@ async fn main() {
 
     // creates genesis and writes to binary file
     match genesis.generate(solana_root.get_root_path(), &build_path) {
-        Ok(_) => (),
+        Ok(_) => info!("Created genesis successfully"),
         Err(err) => {
-            error!("generate genesis error! {}", err);
+            error!("generate genesis error! {err}");
             return;
+        }
+    }
+
+    //unwraps are safe here. since their requirement is enforced by argmatches
+    let docker = DockerConfig::new(
+        matches
+            .value_of("base_image")
+            .unwrap_or_default()
+            .to_string(),
+        matches.value_of("image_name").unwrap().to_string(),
+        matches
+            .value_of("image_tag")
+            .unwrap_or_default()
+            .to_string(),
+        matches.value_of("registry_name").unwrap().to_string(),
+        deploy_method,
+    );
+
+    if build_config.docker_build() {
+        let image_type = ValidatorType::Bootstrap;
+        match docker.build_image(solana_root.get_root_path(), &image_type) {
+            Ok(_) => info!("{image_type} image built successfully"),
+            Err(err) => {
+                error!("Error. Failed to build imge: {err}");
+                return;
+            }
         }
     }
 }
