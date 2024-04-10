@@ -47,15 +47,15 @@
     - [x] Validator (regular)
     - [x] RPC nodes
     - [x] Client
-- [ ] Create accounts
+- [x] Create accounts
     - [x] Validator (regular)
     - [x] RPC
     - [x] Client
-- [ ] Add feature flags to configure:
-    - [ ] Bootstrap
-    - [ ] Validator (regular)
-    - [ ] RPC nodes
-    - [ ] Client
+- [x] Add feature flags to configure:
+    - [x] Bootstrap
+    - [x] Validator (regular)
+    - [x] RPC nodes
+    - [x] Client
 
 Above, we start with bootstrap, and then we do validators (regular), and then we do RPCs, then Clients
 - By the end of the Bootstrap set of PRs, we can

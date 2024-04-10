@@ -335,18 +335,15 @@ WORKDIR /home/solana
         Ok(())
     }
 
-    pub fn push_images(&self, validators: &[&Validator]) -> Result<(), Box<dyn Error + Send>> {
+    pub fn push_images<'a, I>(&self, validators: I) -> Result<(), Box<dyn Error + Send>>
+    where
+        I: IntoIterator<Item = &'a Validator>,
+    {
         info!("Pushing images...");
         validators
+            .into_iter()
+            .collect::<Vec<_>>() // Collect into Vec to use with Rayon
             .par_iter()
             .try_for_each(|validator| Self::push_image(validator.image()))
-    }
-
-    // need a new image for each client
-    pub fn push_client_images(&self, clients: &[Validator]) -> Result<(), Box<dyn Error + Send>> {
-        info!("Pushing client images...");
-        clients
-            .par_iter()
-            .try_for_each(|client| Self::push_image(client.image()))
     }
 }

@@ -16,6 +16,7 @@ use {
         },
         kubernetes::{Kubernetes, PodRequests},
         ledger_helper::LedgerHelper,
+        library::Library,
         release::{BuildConfig, BuildType, DeployMethod},
         validator::{LabelType, Validator},
         validator_config::ValidatorConfig,
@@ -679,34 +680,52 @@ async fn main() {
         .unwrap_or_default()
         .to_string();
 
-    let mut bootstrap_validator = Validator::new(DockerImage::new(
+    let mut validator_library = Library::default();
+
+    let bootstrap_validator = Validator::new(DockerImage::new(
         registry_name.clone(),
         ValidatorType::Bootstrap,
         image_name.clone(),
         image_tag.clone(),
         None,
     ));
+    validator_library.set_item(bootstrap_validator, ValidatorType::Bootstrap);
 
-    let mut validator = Validator::new(DockerImage::new(
-        registry_name.clone(),
-        ValidatorType::Standard,
-        image_name.clone(),
-        image_tag.clone(),
-        None,
-    ));
+    if num_validators > 0 {
+        let validator = Validator::new(DockerImage::new(
+            registry_name.clone(),
+            ValidatorType::Standard,
+            image_name.clone(),
+            image_tag.clone(),
+            None,
+        ));
+        validator_library.set_item(validator, ValidatorType::Standard);
+    }
 
-    let mut rpc_node = Validator::new(DockerImage::new(
-        registry_name.clone(),
-        ValidatorType::RPC,
-        image_name.clone(),
-        image_tag.clone(),
-        None,
-    ));
+    if num_rpc_nodes > 0 {
+        let rpc_node = Validator::new(DockerImage::new(
+            registry_name.clone(),
+            ValidatorType::RPC,
+            image_name.clone(),
+            image_tag.clone(),
+            None,
+        ));
+        validator_library.set_item(rpc_node, ValidatorType::RPC);
+    }
 
-    let mut clients = vec![];
-    let validators = vec![&bootstrap_validator, &validator, &rpc_node];
+    for client_index in 0..client_config.num_clients {
+        let client = Validator::new(DockerImage::new(
+            registry_name.clone(),
+            ValidatorType::Client,
+            image_name.clone(),
+            image_tag.clone(),
+            Some(client_index),
+        ));
+        validator_library.set_item(client, ValidatorType::Client);
+    }
+
     if build_config.docker_build() {
-        for v in &validators {
+        for v in validator_library.get_validators() {
             match docker.build_image(&solana_root.get_root_path(), v.image()) {
                 Ok(_) => info!("{} image built successfully", v.validator_type()),
                 Err(err) => {
@@ -716,20 +735,10 @@ async fn main() {
             }
         }
 
-        for client_index in 0..client_config.num_clients {
-            let client = Validator::new(DockerImage::new(
-                registry_name.clone(),
-                ValidatorType::Client,
-                image_name.clone(),
-                image_tag.clone(),
-                Some(client_index),
-            ));
-
-            // need new image for each client since they each hold
-            // their own client-accounts.yml
+        for (client_index, client) in validator_library.get_clients().enumerate() {
             match docker.build_client_image(
                 &solana_root.get_root_path(),
-                &client.image(),
+                client.image(),
                 client_index,
             ) {
                 Ok(_) => info!("Client image built successfully"),
@@ -738,22 +747,12 @@ async fn main() {
                     return;
                 }
             }
-
-            clients.push(client);
         }
 
-        match docker.push_images(&validators) {
+        match docker.push_images(validator_library.get_all()) {
             Ok(_) => info!("Validator images pushed successfully"),
             Err(err) => {
                 error!("Failed to push Validator docker image {err}");
-                return;
-            }
-        }
-
-        match docker.push_client_images(&clients) {
-            Ok(_) => info!("Client image pushed successfully"),
-            Err(err) => {
-                error!("Failed to push Client docker image {err}");
                 return;
             }
         }
@@ -777,6 +776,7 @@ async fn main() {
         }
     };
 
+    let bootstrap_validator = validator_library.bootstrap().expect("should be bootstrap");
     match kub_controller.create_bootstrap_secret("bootstrap-accounts-secret", &config_directory) {
         Ok(secret) => bootstrap_validator.set_secret(secret),
         Err(err) => {
@@ -893,6 +893,7 @@ async fn main() {
     }
 
     if num_rpc_nodes > 0 {
+        let rpc_node = validator_library.rpc_node().expect("should be an rpc node");
         let mut rpc_nodes = vec![];
         for rpc_index in 0..num_rpc_nodes {
             match kub_controller.create_rpc_secret(rpc_index, &config_directory) {
@@ -1012,6 +1013,9 @@ async fn main() {
 
     // Create and deploy validators secrets/selectors
     for validator_index in 0..num_validators {
+        // NOTE: we can use same one here because labels and images are the same. labels will just
+        // overwrite each other
+        let validator = validator_library.validator().expect("should be validator");
         match kub_controller.create_validator_secret(validator_index, &config_directory) {
             Ok(secret) => validator.set_secret(secret),
             Err(err) => {
@@ -1094,7 +1098,10 @@ async fn main() {
         return;
     }
 
-    for (client_index, client) in clients.iter_mut().enumerate() {
+    for client_index in 0..client_config.num_clients {
+        let client = validator_library
+            .client(client_index)
+            .expect("should be a client at this index");
         match kub_controller.create_client_secret(client_index, &config_directory) {
             Ok(secret) => client.set_secret(secret),
             Err(err) => {

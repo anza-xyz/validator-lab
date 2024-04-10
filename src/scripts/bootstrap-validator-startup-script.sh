@@ -147,7 +147,6 @@ args+=(
   --no-incremental-snapshots \
   --full-rpc-api \
   --allow-private-addr \
-  --enable-rpc-transaction-history
 )
 
 echo "Bootstrap Args"
