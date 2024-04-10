@@ -175,30 +175,19 @@ impl DockerConfig {
         let dockerfile = format!(
             r#"
 FROM {}
-RUN apt-get update
-RUN apt-get install -y iputils-ping curl vim bzip2
+RUN apt-get update && apt-get install -y iputils-ping curl vim && \
+    rm -rf /var/lib/apt/lists/* && \
+    useradd -ms /bin/bash solana && \
+    adduser solana sudo
 
-RUN useradd -ms /bin/bash solana
-RUN adduser solana sudo
 USER solana
-
-RUN mkdir -p /home/solana/k8s-cluster-scripts
-# TODO: this needs to be changed for non bootstrap, this should be ./src/scripts/<validator-type>-startup-scripts.sh
-COPY {startup_script_directory}/bootstrap-startup-script.sh /home/solana/k8s-cluster-scripts
- 
-RUN mkdir -p /home/solana/ledger
+COPY --chown=solana:solana  {startup_script_directory} /home/solana/k8s-cluster-scripts
 COPY --chown=solana:solana ./config-k8s/bootstrap-validator  /home/solana/ledger
-
-RUN mkdir -p /home/solana/.cargo/bin
-
-COPY ./{solana_build_directory}/bin/ /home/solana/.cargo/bin/
-COPY ./{solana_build_directory}/version.yml /home/solana/
-
-RUN mkdir -p /home/solana/config
+COPY --chown=solana:solana ./{solana_build_directory}/bin/ /home/solana/.cargo/bin/
+COPY --chown=solana:solana ./{solana_build_directory}/version.yml /home/solana/
 ENV PATH="/home/solana/.cargo/bin:${{PATH}}"
 
 WORKDIR /home/solana
-
 "#,
             self.base_image
         );
