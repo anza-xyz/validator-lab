@@ -180,13 +180,9 @@ impl BuildConfig {
         );
         info!("download_url: {download_url}");
 
-        download_to_temp(
-            download_url.as_str(),
-            tar_filename,
-            self.solana_root_path.clone(),
-        )
-        .await
-        .map_err(|err| format!("Unable to download {download_url}. Error: {err}"))?;
+        download_to_temp(download_url.as_str(), &file_path)
+            .await
+            .map_err(|err| format!("Unable to download {download_url}. Error: {err}"))?;
 
         Ok(())
     }

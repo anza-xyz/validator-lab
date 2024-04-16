@@ -7,7 +7,7 @@ use {
     std::{
         env,
         fs::File,
-        io::{BufReader, Cursor, Read},
+        io::{BufReader, Cursor, Read, Write},
         path::{Path, PathBuf},
         time::Duration,
     },
@@ -15,6 +15,8 @@ use {
     tar::Archive,
     url::Url,
 };
+
+const UPGRADEABLE_LOADER: &str = "BPFLoaderUpgradeab1e11111111111111111111111";
 
 pub fn get_solana_root() -> PathBuf {
     PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("$CARGO_MANIFEST_DIR")).to_path_buf()
@@ -88,8 +90,7 @@ pub fn cat_file(path: &PathBuf) -> std::io::Result<()> {
 
 pub async fn download_to_temp(
     url: &str,
-    file_name: &str,
-    solana_root_path: PathBuf,
+    file_path: &Path, // full path to file including filename
 ) -> Result<(), Box<dyn std::error::Error>> {
     let progress_bar = new_spinner_progress_bar();
     progress_bar.set_message(format!("{TRUCK}Downloading..."));
@@ -111,8 +112,7 @@ pub async fn download_to_temp(
         .into());
     }
 
-    let file_name: PathBuf = solana_root_path.join(file_name);
-    let mut out = File::create(file_name).expect("failed to create file");
+    let mut out = File::create(file_path).expect("failed to create file");
     let mut content = Cursor::new(response.bytes().await?);
     std::io::copy(&mut content, &mut out)?;
 
@@ -135,6 +135,83 @@ pub fn extract_release_archive(
     archive.unpack(extract_dir)?;
 
     progress_bar.finish_and_clear();
+
+    Ok(())
+}
+
+async fn fetch_program(
+    name: &str,
+    version: &str,
+    solana_root_path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let so_filename = format!("spl_{}-{}.so", name.replace('-', "_"), version);
+    let so_path = solana_root_path.join(&so_filename);
+
+    if !so_path.exists() {
+        info!("Downloading {} {}", name, version);
+        let url = format!(
+            "https://github.com/solana-labs/solana-program-library/releases/download/{}-v{}/{}",
+            name, version, so_filename
+        );
+
+        download_to_temp(&url, &so_path)
+            .await
+            .map_err(|err| format!("Unable to download {url}. Error: {err}"))?;
+    }
+
+    Ok(())
+}
+
+pub async fn fetch_spl(solana_root_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let mut genesis_args = vec![];
+
+    let programs = vec![
+        (
+            "token",
+            "3.5.0",
+            "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+            "BPFLoader2111111111111111111111111111111111",
+        ),
+        (
+            "token-2022",
+            "0.9.0",
+            "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+            UPGRADEABLE_LOADER,
+        ),
+        (
+            "associated-token-account",
+            "1.1.2",
+            "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+            "BPFLoader2111111111111111111111111111111111",
+        ),
+    ];
+
+    for (name, version, address, loader) in programs {
+        fetch_program(name, version, solana_root_path).await?;
+
+        let arg = if loader == UPGRADEABLE_LOADER {
+            format!(
+                "--upgradeable-program {} {} spl_{}-{}.so none",
+                address,
+                loader,
+                name.replace('-', "_"),
+                version
+            )
+        } else {
+            format!(
+                "--bpf-program {} {} spl_{}-{}.so",
+                address,
+                loader,
+                name.replace('-', "_"),
+                version
+            )
+        };
+        genesis_args.push(arg);
+    }
+
+    // Write genesis args to file
+    let mut file = std::fs::File::create(solana_root_path.join("spl-genesis-args.sh"))?;
+    writeln!(file, "{}", genesis_args.join(" "))?;
 
     Ok(())
 }

@@ -1,5 +1,5 @@
 use {
-    crate::{new_spinner_progress_bar, ValidatorType, SUN},
+    crate::{fetch_spl, new_spinner_progress_bar, ValidatorType, SUN},
     log::*,
     rand::Rng,
     solana_core::gen_keys::GenKeys,
@@ -24,25 +24,10 @@ pub const DEFAULT_INTERNAL_NODE_SOL: f64 = 100.0;
 pub const DEFAULT_BOOTSTRAP_NODE_STAKE_SOL: f64 = 10.0;
 pub const DEFAULT_BOOTSTRAP_NODE_SOL: f64 = 100.0;
 
-fn fetch_spl(fetch_spl_file: &PathBuf) -> Result<(), Box<dyn Error>> {
-    let output = Command::new("bash")
-        .arg(fetch_spl_file)
-        .output() // Capture the output of the script
-        .expect("Failed to run fetch-spl.sh script");
-
-    // Check if the script execution was successful
-    if output.status.success() {
-        Ok(())
-    } else {
-        Err(format!(
-            "Failed to run fetch-spl.sh script: {:?}",
-            String::from_utf8(output.stderr)
-        )
-        .into())
-    }
-}
-
-fn parse_spl_genesis_file(spl_file: &PathBuf) -> Result<Vec<String>, Box<dyn Error>> {
+fn parse_spl_genesis_file(
+    spl_file: &PathBuf,
+    solana_root_path: &Path,
+) -> Result<Vec<String>, Box<dyn Error>> {
     // Read entire file into a String
     let mut file = File::open(spl_file)?;
     let mut content = String::new();
@@ -50,7 +35,18 @@ fn parse_spl_genesis_file(spl_file: &PathBuf) -> Result<Vec<String>, Box<dyn Err
 
     let args = content
         .split_whitespace()
-        .map(str::to_string)
+        .map(String::from)
+        .map(|arg| {
+            if arg.ends_with(".so") {
+                solana_root_path
+                    .join(&arg)
+                    .into_os_string()
+                    .into_string()
+                    .unwrap()
+            } else {
+                arg
+            }
+        })
         .collect::<Vec<String>>();
 
     Ok(args)
@@ -266,22 +262,23 @@ impl Genesis {
         Ok(args)
     }
 
-    pub fn setup_spl_args(&self, solana_root_path: &Path) -> Result<Vec<String>, Box<dyn Error>> {
-        let fetch_spl_file = solana_root_path.join("fetch-spl.sh");
-        fetch_spl(&fetch_spl_file)?;
+    pub async fn setup_spl_args(
+        &self,
+        solana_root_path: &Path,
+    ) -> Result<Vec<String>, Box<dyn Error>> {
+        fetch_spl(solana_root_path).await?;
 
-        // add in spl
         let spl_file = solana_root_path.join("spl-genesis-args.sh");
-        parse_spl_genesis_file(&spl_file)
+        parse_spl_genesis_file(&spl_file, solana_root_path)
     }
 
-    pub fn generate(
+    pub async fn generate(
         &mut self,
         solana_root_path: &Path,
         build_path: &Path,
     ) -> Result<(), Box<dyn Error>> {
         let mut args = self.setup_genesis_flags()?;
-        let mut spl_args = self.setup_spl_args(solana_root_path)?;
+        let mut spl_args = self.setup_spl_args(solana_root_path).await?;
         args.append(&mut spl_args);
 
         let progress_bar = new_spinner_progress_bar();

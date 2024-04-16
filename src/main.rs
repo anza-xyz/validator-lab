@@ -303,7 +303,10 @@ async fn main() {
     }
 
     // creates genesis and writes to binary file
-    match genesis.generate(solana_root.get_root_path(), &build_path) {
+    match genesis
+        .generate(solana_root.get_root_path(), &build_path)
+        .await
+    {
         Ok(_) => info!("Created genesis successfully"),
         Err(err) => {
             error!("generate genesis error! {err}");
