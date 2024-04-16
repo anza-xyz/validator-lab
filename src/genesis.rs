@@ -35,8 +35,8 @@ fn fetch_spl(fetch_spl_file: &PathBuf) -> Result<(), Box<dyn Error>> {
         Ok(())
     } else {
         Err(format!(
-            "Failed to fun fetch-spl.sh script: {}",
-            String::from_utf8_lossy(&output.stderr)
+            "Failed to run fetch-spl.sh script: {:?}",
+            String::from_utf8(output.stderr)
         )
         .into())
     }
@@ -48,24 +48,10 @@ fn parse_spl_genesis_file(spl_file: &PathBuf) -> Result<Vec<String>, Box<dyn Err
     let mut content = String::new();
     file.read_to_string(&mut content)?;
 
-    // Split by whitespace
-    let mut args = Vec::new();
-    let mut tokens_iter = content.split_whitespace();
-
-    while let Some(token) = tokens_iter.next() {
-        args.push(token.to_string());
-        // Find flag delimiters
-        if token.starts_with("--") {
-            for next_token in tokens_iter.by_ref() {
-                if next_token.starts_with("--") {
-                    args.push(next_token.to_string());
-                } else {
-                    args.push(next_token.to_string());
-                    break;
-                }
-            }
-        }
-    }
+    let args = content
+        .split_whitespace()
+        .map(str::to_string)
+        .collect::<Vec<String>>();
 
     Ok(args)
 }
@@ -198,7 +184,7 @@ impl Genesis {
         Ok(())
     }
 
-    fn setup_genesis_flags(&self) -> Vec<String> {
+    fn setup_genesis_flags(&self) -> Result<Vec<String>, Box<dyn Error>> {
         let mut args = vec![
             "--bootstrap-validator-lamports".to_string(),
             sol_to_lamports(
@@ -229,15 +215,27 @@ impl Genesis {
             "--faucet-pubkey".to_string(),
             self.config_dir
                 .join("faucet.json")
-                .to_string_lossy()
-                .to_string(),
+                .into_os_string()
+                .into_string()
+                .map_err(|err| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("Invalid Unicode data in path: {:?}", err),
+                    )
+                })?,
             "--cluster-type".to_string(),
             self.flags.cluster_type.to_string(),
             "--ledger".to_string(),
             self.config_dir
                 .join("bootstrap-validator")
-                .to_string_lossy()
-                .to_string(),
+                .into_os_string()
+                .into_string()
+                .map_err(|err| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("Invalid Unicode data in path: {:?}", err),
+                    )
+                })?,
         ];
 
         if self.flags.enable_warmup_epochs {
@@ -245,16 +243,15 @@ impl Genesis {
         }
 
         args.push("--bootstrap-validator".to_string());
-        ["identity", "vote-account", "stake-account"]
-            .iter()
-            .for_each(|account_type| {
-                args.push(
-                    self.config_dir
-                        .join(format!("bootstrap-validator/{account_type}.json"))
-                        .to_string_lossy()
-                        .to_string(),
-                );
-            });
+        for account_type in ["identity", "vote-account", "stake-account"].iter() {
+            let path = self
+                .config_dir
+                .join(format!("bootstrap-validator/{account_type}.json"))
+                .into_os_string()
+                .into_string()
+                .map_err(|_| "Failed to convert path to string")?;
+            args.push(path);
+        }
 
         if let Some(slots_per_epoch) = self.flags.slots_per_epoch {
             args.push("--slots-per-epoch".to_string());
@@ -266,7 +263,7 @@ impl Genesis {
             args.push(lamports_per_signature.to_string());
         }
 
-        args
+        Ok(args)
     }
 
     pub fn setup_spl_args(&self, solana_root_path: &Path) -> Result<Vec<String>, Box<dyn Error>> {
@@ -283,7 +280,7 @@ impl Genesis {
         solana_root_path: &Path,
         build_path: &Path,
     ) -> Result<(), Box<dyn Error>> {
-        let mut args = self.setup_genesis_flags();
+        let mut args = self.setup_genesis_flags()?;
         let mut spl_args = self.setup_spl_args(solana_root_path)?;
         args.append(&mut spl_args);
 
@@ -300,8 +297,8 @@ impl Genesis {
 
         if !output.status.success() {
             return Err(format!(
-                "Failed to create genesis. err: {}",
-                String::from_utf8_lossy(&output.stderr)
+                "Failed to create genesis. err: {:?}",
+                String::from_utf8(output.stderr)
             )
             .into());
         }
