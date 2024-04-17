@@ -320,7 +320,7 @@ async fn main() {
     let docker = DockerConfig::new(
         matches
             .value_of("base_image")
-            .unwrap_or_default()
+            .unwrap()
             .to_string(),
         deploy_method,
     );
@@ -332,7 +332,7 @@ async fn main() {
         matches.value_of("image_name").unwrap().to_string(),
         matches
             .value_of("image_tag")
-            .unwrap_or_default()
+            .unwrap()
             .to_string(),
     );
 
