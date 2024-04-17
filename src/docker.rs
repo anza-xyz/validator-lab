@@ -2,7 +2,6 @@ use {
     crate::{new_spinner_progress_bar, release::DeployMethod, ValidatorType, BUILD, ROCKET},
     log::*,
     std::{
-        env,
         error::Error,
         fmt::{self, Display, Formatter},
         fs,
@@ -66,6 +65,7 @@ impl DockerConfig {
     pub fn build_image(
         &self,
         solana_root_path: &Path,
+        lab_path: &Path,
         docker_image: &DockerImage,
     ) -> Result<(), Box<dyn Error>> {
         let validator_type = docker_image.validator_type();
@@ -82,6 +82,7 @@ impl DockerConfig {
         let docker_path = solana_root_path.join(format!("docker-build/{validator_type}"));
         self.create_base_image(
             solana_root_path,
+            lab_path,
             docker_image,
             &docker_path,
             &validator_type,
@@ -93,11 +94,12 @@ impl DockerConfig {
     fn create_base_image(
         &self,
         solana_root_path: &Path,
+        lab_path: &Path,
         docker_image: &DockerImage,
         docker_path: &PathBuf,
         validator_type: &ValidatorType,
     ) -> Result<(), Box<dyn Error>> {
-        self.create_dockerfile(validator_type, docker_path, None)?;
+        self.create_dockerfile(validator_type, docker_path, lab_path, None)?;
 
         // We use std::process::Command here because Docker-rs is very slow building dockerfiles
         // when they are in large repos. Docker-rs doesn't seem to support the `--file` flag natively.
@@ -108,7 +110,10 @@ impl DockerConfig {
         let progress_bar = new_spinner_progress_bar();
         progress_bar.set_message(format!("{BUILD}Building {validator_type} docker image...",));
 
-        let command = format!("docker build -t {docker_image} -f {dockerfile:?} {context_path}");
+        let command = format!(
+            "docker build -t {docker_image} -f {} {context_path}",
+            dockerfile.display()
+        );
 
         let output = match Command::new("sh")
             .arg("-c")
@@ -147,6 +152,7 @@ impl DockerConfig {
         &self,
         validator_type: &ValidatorType,
         docker_path: &PathBuf,
+        lab_path: &Path,
         content: Option<&str>,
     ) -> Result<(), Box<dyn Error>> {
         if docker_path.exists() {
@@ -156,11 +162,9 @@ impl DockerConfig {
 
         if let DeployMethod::Local(_) = self.deploy_method {
             if validator_type == &ValidatorType::Bootstrap {
-                let manifest_path =
-                    PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("$CARGO_MANIFEST_DIR"));
                 let files_to_copy = ["bootstrap-startup-script.sh", "common.sh"];
                 for file_name in files_to_copy.iter() {
-                    Self::copy_file_to_docker(&manifest_path, docker_path, file_name)?;
+                    Self::copy_file_to_docker(lab_path, docker_path, file_name)?;
                 }
             }
         }

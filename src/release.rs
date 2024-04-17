@@ -30,7 +30,7 @@ pub struct BuildConfig {
     build_type: BuildType,
     solana_root_path: PathBuf,
     docker_build: bool,
-    build_path: PathBuf,
+    _build_path: PathBuf,
 }
 
 impl BuildConfig {
@@ -50,12 +50,8 @@ impl BuildConfig {
             build_type,
             solana_root_path: solana_root_path.to_path_buf(),
             docker_build,
-            build_path,
+            _build_path: build_path,
         }
-    }
-
-    pub fn build_path(&self) -> PathBuf {
-        self.build_path.clone()
     }
 
     pub fn docker_build(&self) -> bool {
@@ -90,7 +86,10 @@ impl BuildConfig {
         let tarball_filename = self.solana_root_path.join(&tar_filename);
         let release_dir = self.solana_root_path.join(file_name);
         extract_release_archive(&tarball_filename, &self.solana_root_path).map_err(|err| {
-            format!("Unable to extract {tar_filename} into {release_dir:?}: {err}")
+            format!(
+                "Unable to extract {tar_filename} into {}: {err}",
+                release_dir.display()
+            )
         })?;
 
         Ok(release_dir)
