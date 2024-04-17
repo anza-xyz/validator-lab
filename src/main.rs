@@ -4,8 +4,11 @@ use {
     std::fs,
     strum::VariantNames,
     validator_lab::{
-        docker::DockerConfig,
-        genesis::{Genesis, GenesisFlags},
+        docker::{DockerConfig, DockerImage},
+        genesis::{
+            Genesis, GenesisFlags, DEFAULT_BOOTSTRAP_NODE_SOL, DEFAULT_BOOTSTRAP_NODE_STAKE_SOL,
+            DEFAULT_FAUCET_LAMPORTS, DEFAULT_MAX_GENESIS_ARCHIVE_UNPACKED_SIZE,
+        },
         kubernetes::Kubernetes,
         release::{BuildConfig, BuildType, DeployMethod},
         SolanaRoot, ValidatorType,
@@ -59,32 +62,32 @@ fn parse_matches() -> clap::ArgMatches {
             Arg::with_name("slots_per_epoch")
                 .long("slots-per-epoch")
                 .takes_value(true)
-                .help("override the number of slots in an epoch"),
+                .help("override the number of slots in an epoch. Default for cluster_type: development -> 8192.
+                Default for cluster_type: devnet, testnet, mainnet-beta -> 432000 (1 epoch every ~= 2 days)"),
         )
         .arg(
             Arg::with_name("target_lamports_per_signature")
                 .long("target-lamports-per-signature")
                 .takes_value(true)
-                .help("Genesis config. target lamports per signature"),
+                .help("Genesis config. target lamports per signature. Default: 10000"),
         )
         .arg(
             Arg::with_name("faucet_lamports")
                 .long("faucet-lamports")
                 .takes_value(true)
+                .default_value(&DEFAULT_FAUCET_LAMPORTS.to_string())
                 .help("Override the default 500000000000000000 lamports minted in genesis"),
         )
         .arg(
             Arg::with_name("enable_warmup_epochs")
                 .long("enable-warmup-epochs")
-                .takes_value(true)
-                .possible_values(["true", "false"])
-                .default_value("true")
                 .help("Genesis config. enable warmup epoch. defaults to true"),
         )
         .arg(
             Arg::with_name("max_genesis_archive_unpacked_size")
                 .long("max-genesis-archive-unpacked-size")
                 .takes_value(true)
+                .default_value(&DEFAULT_MAX_GENESIS_ARCHIVE_UNPACKED_SIZE.to_string())
                 .help("Genesis config. max_genesis_archive_unpacked_size"),
         )
         .arg(
@@ -101,12 +104,14 @@ fn parse_matches() -> clap::ArgMatches {
             Arg::with_name("bootstrap_validator_sol")
                 .long("bootstrap-validator-sol")
                 .takes_value(true)
+                .default_value(&DEFAULT_BOOTSTRAP_NODE_SOL.to_string())
                 .help("Genesis config. bootstrap validator sol"),
         )
         .arg(
             Arg::with_name("bootstrap_validator_stake_sol")
                 .long("bootstrap-validator-stake-sol")
                 .takes_value(true)
+                .default_value(&DEFAULT_BOOTSTRAP_NODE_STAKE_SOL.to_string())
                 .help("Genesis config. bootstrap validator stake sol"),
         )
         //Docker config
@@ -244,7 +249,7 @@ async fn main() {
                 .parse()
                 .expect("Invalid value for faucet_lamports")
         }),
-        enable_warmup_epochs: matches.value_of("enable_warmup_epochs").unwrap() == "true",
+        enable_warmup_epochs: matches.is_present("enable_warmup_epochs"),
         max_genesis_archive_unpacked_size: matches
             .value_of("max_genesis_archive_unpacked_size")
             .map(|value_str| {
@@ -298,7 +303,10 @@ async fn main() {
     }
 
     // creates genesis and writes to binary file
-    match genesis.generate(solana_root.get_root_path(), &build_path) {
+    match genesis
+        .generate(solana_root.get_root_path(), &build_path)
+        .await
+    {
         Ok(_) => info!("Created genesis successfully"),
         Err(err) => {
             error!("generate genesis error! {err}");
@@ -312,19 +320,34 @@ async fn main() {
             .value_of("base_image")
             .unwrap_or_default()
             .to_string(),
+        deploy_method,
+    );
+
+    let validator_type = ValidatorType::Bootstrap;
+    let docker_image = DockerImage::new(
+        matches.value_of("registry_name").unwrap().to_string(),
+        validator_type,
         matches.value_of("image_name").unwrap().to_string(),
         matches
             .value_of("image_tag")
             .unwrap_or_default()
             .to_string(),
-        matches.value_of("registry_name").unwrap().to_string(),
-        deploy_method,
     );
 
     if build_config.docker_build() {
-        let image_type = ValidatorType::Bootstrap;
-        match docker.build_image(solana_root.get_root_path(), &image_type) {
-            Ok(_) => info!("{image_type} image built successfully"),
+        match docker.build_image(solana_root.get_root_path(), &docker_image) {
+            Ok(_) => info!("{} image built successfully", docker_image.validator_type()),
+            Err(err) => {
+                error!("Exiting........ {err}");
+                return;
+            }
+        }
+
+        match DockerConfig::push_image(&docker_image) {
+            Ok(_) => info!(
+                "{} image pushed successfully",
+                docker_image.validator_type()
+            ),
             Err(err) => {
                 error!("Error. Failed to build imge: {err}");
                 return;
