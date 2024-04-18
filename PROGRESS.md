@@ -19,7 +19,7 @@
     - [x] Build Bootstrap Image
     - [x] Push Image to registry
 - [ ] Create & Deploy Secrets
-    - [ ] Bootstrap
+    - [x] Bootstrap
     - [ ] Validator (regular)
     - [ ] RPC nodes
     - [ ] Client

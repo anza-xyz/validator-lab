@@ -11,7 +11,7 @@ use {
         },
         kubernetes::Kubernetes,
         release::{BuildConfig, BuildType, DeployMethod},
-        SolanaRoot, ValidatorType,
+        EnvironmentConfig, SolanaRoot, ValidatorType,
     },
 };
 
@@ -49,6 +49,14 @@ fn parse_matches() -> clap::ArgMatches {
             ArgGroup::new("required_group")
                 .args(&["local_path", "release_channel"])
                 .required(true),
+        )
+        .arg(
+            Arg::with_name("validator_lab_directory")
+                .long("validator-lab-dir")
+                .takes_value(true)
+                .required(true)
+                .help("Absolute path to validator lab directory. 
+                e.g. /home/sol/validator-lab"),
         )
         // Genesis Config
         .arg(
@@ -151,11 +159,6 @@ fn parse_matches() -> clap::ArgMatches {
         .get_matches()
 }
 
-#[derive(Clone, Debug)]
-pub struct EnvironmentConfig<'a> {
-    pub namespace: &'a str,
-}
-
 #[tokio::main]
 async fn main() {
     if std::env::var("RUST_LOG").is_err() {
@@ -165,6 +168,7 @@ async fn main() {
     let matches = parse_matches();
     let environment_config = EnvironmentConfig {
         namespace: matches.value_of("cluster_namespace").unwrap_or_default(),
+        lab_path: matches.value_of("validator_lab_directory").unwrap().into(),
     };
 
     let deploy_method = if let Some(local_path) = matches.value_of("local_path") {
@@ -182,7 +186,7 @@ async fn main() {
             (root, path)
         }
         DeployMethod::ReleaseChannel(_) => {
-            let root = SolanaRoot::default();
+            let root = SolanaRoot::new_from_path(environment_config.lab_path.clone());
             let path = root.get_root_path().join("solana-release/bin");
             (root, path)
         }
@@ -193,14 +197,14 @@ async fn main() {
     if let Ok(metadata) = fs::metadata(solana_root.get_root_path()) {
         if !metadata.is_dir() {
             return error!(
-                "Build path is not a directory: {:?}",
-                solana_root.get_root_path()
+                "Build path is not a directory: {}",
+                solana_root.get_root_path().display()
             );
         }
     } else {
         return error!(
-            "Build directory not found: {:?}",
-            solana_root.get_root_path()
+            "Build directory not found: {}",
+            solana_root.get_root_path().display()
         );
     }
 
@@ -285,7 +289,9 @@ async fn main() {
         }
     }
 
-    let mut genesis = Genesis::new(solana_root.get_root_path(), genesis_flags);
+    let config_directory = solana_root.get_root_path().join("config-k8s");
+    let mut genesis = Genesis::new(config_directory.clone(), genesis_flags);
+
     match genesis.generate_faucet() {
         Ok(_) => info!("Generated faucet account"),
         Err(err) => {
@@ -316,10 +322,7 @@ async fn main() {
 
     //unwraps are safe here. since their requirement is enforced by argmatches
     let docker = DockerConfig::new(
-        matches
-            .value_of("base_image")
-            .unwrap_or_default()
-            .to_string(),
+        matches.value_of("base_image").unwrap().to_string(),
         deploy_method,
     );
 
@@ -328,14 +331,15 @@ async fn main() {
         matches.value_of("registry_name").unwrap().to_string(),
         validator_type,
         matches.value_of("image_name").unwrap().to_string(),
-        matches
-            .value_of("image_tag")
-            .unwrap_or_default()
-            .to_string(),
+        matches.value_of("image_tag").unwrap().to_string(),
     );
 
     if build_config.docker_build() {
-        match docker.build_image(solana_root.get_root_path(), &docker_image) {
+        match docker.build_image(
+            solana_root.get_root_path(),
+            &environment_config.lab_path,
+            &docker_image,
+        ) {
             Ok(_) => info!("{} image built successfully", docker_image.validator_type()),
             Err(err) => {
                 error!("Exiting........ {err}");
@@ -352,6 +356,24 @@ async fn main() {
                 error!("Error. Failed to build imge: {err}");
                 return;
             }
+        }
+    }
+
+    let bootstrap_secret = match kub_controller
+        .create_bootstrap_secret("bootstrap-accounts-secret", &config_directory)
+    {
+        Ok(secret) => secret,
+        Err(err) => {
+            error!("Failed to create bootstrap secret! {}", err);
+            return;
+        }
+    };
+
+    match kub_controller.deploy_secret(&bootstrap_secret).await {
+        Ok(_) => info!("Deployed Bootstrap Secret"),
+        Err(err) => {
+            error!("{}", err);
+            return;
         }
     }
 }

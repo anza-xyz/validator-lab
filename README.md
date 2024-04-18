@@ -27,13 +27,15 @@ kubectl create ns <namespace>
 cargo run --bin cluster --
     -n <namespace>
     --local-path <path-to-local-agave-monorepo>
+    --validator-lab-dir <path-to-validator-lab-directory>
 ```
 
 #### Build specific Agave release
 ```
 cargo run --bin cluster --
     -n <namespace>
-    --release-channel <agave-version: e.g. v1.17.28> # note: MUST include the "v" 
+    --release-channel <agave-version: e.g. v1.17.28> # note: MUST include the "v"
+    --validator-lab-dir <path-to-validator-lab-directory>
 ```
 
 #### Build from Local Repo and Configure Genesis and Bootstrap Validator Image
@@ -42,6 +44,7 @@ Example:
 cargo run --bin cluster -- 
     -n <namespace> 
     --local-path /home/sol/solana
+    --validator-lab-dir /home/sol/validator-lab
     # genesis config. Optional: Many of these have defaults
     --hashes-per-tick <hashes-per-tick>
     --enable-warmup-epochs <true|false>

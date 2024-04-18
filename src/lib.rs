@@ -5,7 +5,6 @@ use {
     log::*,
     reqwest::Client,
     std::{
-        env,
         fs::File,
         io::{BufReader, Cursor, Read, Write},
         path::{Path, PathBuf},
@@ -18,20 +17,14 @@ use {
 
 const UPGRADEABLE_LOADER: &str = "BPFLoaderUpgradeab1e11111111111111111111111";
 
-pub fn get_solana_root() -> PathBuf {
-    PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("$CARGO_MANIFEST_DIR")).to_path_buf()
+#[derive(Clone, Debug)]
+pub struct EnvironmentConfig<'a> {
+    pub namespace: &'a str,
+    pub lab_path: PathBuf, // path to the validator-lab directory
 }
 
 pub struct SolanaRoot {
     root_path: PathBuf,
-}
-
-impl Default for SolanaRoot {
-    fn default() -> Self {
-        Self {
-            root_path: get_solana_root(),
-        }
-    }
 }
 
 impl SolanaRoot {
@@ -58,6 +51,7 @@ pub enum ValidatorType {
 
 pub mod docker;
 pub mod genesis;
+pub mod k8s_helpers;
 pub mod kubernetes;
 pub mod release;
 
