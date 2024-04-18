@@ -20,7 +20,7 @@ const UPGRADEABLE_LOADER: &str = "BPFLoaderUpgradeab1e11111111111111111111111";
 #[derive(Clone, Debug)]
 pub struct EnvironmentConfig<'a> {
     pub namespace: &'a str,
-    pub lab_path: PathBuf, // path to the validator-lab directory
+    pub build_directory: Option<PathBuf>, // path to the validator-lab directory
 }
 
 pub struct SolanaRoot {
@@ -54,6 +54,7 @@ pub mod genesis;
 pub mod k8s_helpers;
 pub mod kubernetes;
 pub mod release;
+pub mod startup_scripts;
 
 static BUILD: Emoji = Emoji("👷 ", "");
 static PACKAGE: Emoji = Emoji("📦 ", "");

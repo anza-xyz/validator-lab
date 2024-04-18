@@ -23,7 +23,7 @@ pub fn create_secret_from_files(
     for (file_path, key_type) in key_files {
         let file_content = std::fs::read(file_path)
             .map_err(|err| format!("Failed to read file '{:?}': {}", file_path, err))?;
-        data.insert(format!("{}.json", key_type), ByteString(file_content));
+        data.insert(format!("{key_type}.json"), ByteString(file_content));
     }
 
     Ok(create_secret(secret_name, data))

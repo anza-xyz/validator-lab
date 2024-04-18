@@ -2,7 +2,7 @@ use {
     clap::{command, Arg, ArgGroup},
     log::*,
     solana_sdk::{signature::keypair::read_keypair_file, signer::Signer},
-    std::fs,
+    std::{fs, path::PathBuf},
     strum::VariantNames,
     validator_lab::{
         docker::{DockerConfig, DockerImage},
@@ -44,6 +44,7 @@ fn parse_matches() -> clap::ArgMatches {
             Arg::with_name("release_channel")
                 .long("release-channel")
                 .takes_value(true)
+                .requires("build_directory")
                 .help("Pulls specific release version. e.g. v1.17.2"),
         )
         .group(
@@ -52,12 +53,12 @@ fn parse_matches() -> clap::ArgMatches {
                 .required(true),
         )
         .arg(
-            Arg::with_name("validator_lab_directory")
-                .long("validator-lab-dir")
+            Arg::with_name("build_directory")
+                .long("build-dir")
                 .takes_value(true)
-                .required(true)
-                .help("Absolute path to validator lab directory. 
-                e.g. /home/sol/validator-lab"),
+                .conflicts_with("local_path")
+                .help("Absolute path to build directory for release-channel
+                e.g. /home/sol/validator-lab-build"),
         )
         // Genesis Config
         .arg(
@@ -169,7 +170,7 @@ async fn main() {
     let matches = parse_matches();
     let environment_config = EnvironmentConfig {
         namespace: matches.value_of("cluster_namespace").unwrap_or_default(),
-        lab_path: matches.value_of("validator_lab_directory").unwrap().into(),
+        build_directory: matches.value_of("build_directory").map(PathBuf::from),
     };
 
     let deploy_method = if let Some(local_path) = matches.value_of("local_path") {
@@ -187,7 +188,9 @@ async fn main() {
             (root, path)
         }
         DeployMethod::ReleaseChannel(_) => {
-            let root = SolanaRoot::new_from_path(environment_config.lab_path.clone());
+            // unwrap safe since required if release-channel used
+            let root =
+                SolanaRoot::new_from_path(environment_config.build_directory.unwrap().clone());
             let path = root.get_root_path().join("solana-release/bin");
             (root, path)
         }
@@ -336,11 +339,7 @@ async fn main() {
     );
 
     if build_config.docker_build() {
-        match docker.build_image(
-            solana_root.get_root_path(),
-            &environment_config.lab_path,
-            &docker_image,
-        ) {
+        match docker.build_image(solana_root.get_root_path(), &docker_image) {
             Ok(_) => info!("{} image built successfully", docker_image.validator_type()),
             Err(err) => {
                 error!("Exiting........ {err}");
@@ -365,7 +364,7 @@ async fn main() {
     {
         Ok(secret) => secret,
         Err(err) => {
-            error!("Failed to create bootstrap secret! {}", err);
+            error!("Failed to create bootstrap secret! {err}");
             return;
         }
     };
@@ -373,7 +372,7 @@ async fn main() {
     match kub_controller.deploy_secret(&bootstrap_secret).await {
         Ok(_) => info!("Deployed Bootstrap Secret"),
         Err(err) => {
-            error!("{}", err);
+            error!("{err}");
             return;
         }
     }
