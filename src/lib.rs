@@ -5,6 +5,8 @@ use {
     log::*,
     reqwest::Client,
     std::{
+        error::Error,
+        fmt::{self, Display, Formatter},
         fs::File,
         io::{BufReader, Cursor, Read, Write},
         path::{Path, PathBuf},
@@ -49,12 +51,41 @@ pub enum ValidatorType {
     Client,
 }
 
+#[derive(Debug)]
+struct DockerPushThreadError {
+    message: String,
+}
+
+impl Display for DockerPushThreadError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl Error for DockerPushThreadError {}
+
+impl From<String> for DockerPushThreadError {
+    fn from(message: String) -> Self {
+        DockerPushThreadError { message }
+    }
+}
+
+impl From<&str> for DockerPushThreadError {
+    fn from(message: &str) -> Self {
+        DockerPushThreadError {
+            message: message.to_string(),
+        }
+    }
+}
+
 pub mod docker;
 pub mod genesis;
 pub mod k8s_helpers;
 pub mod kubernetes;
+pub mod library;
 pub mod release;
 pub mod startup_scripts;
+pub mod validator;
 
 static BUILD: Emoji = Emoji("👷 ", "");
 static PACKAGE: Emoji = Emoji("📦 ", "");

@@ -11,7 +11,9 @@ use {
             DEFAULT_FAUCET_LAMPORTS, DEFAULT_MAX_GENESIS_ARCHIVE_UNPACKED_SIZE,
         },
         kubernetes::Kubernetes,
+        library::Library,
         release::{BuildConfig, BuildType, DeployMethod},
+        validator::{LabelType, Validator},
         EnvironmentConfig, SolanaRoot, ValidatorType,
     },
 };
@@ -330,46 +332,56 @@ async fn main() {
         deploy_method,
     );
 
-    let validator_type = ValidatorType::Bootstrap;
-    let docker_image = DockerImage::new(
-        matches.value_of("registry_name").unwrap().to_string(),
-        validator_type,
-        matches.value_of("image_name").unwrap().to_string(),
-        matches.value_of("image_tag").unwrap().to_string(),
-    );
+    let registry_name = matches.value_of("registry_name").unwrap().to_string();
+    let image_name = matches.value_of("image_name").unwrap().to_string();
+    let image_tag = matches
+        .value_of("image_tag")
+        .unwrap_or_default()
+        .to_string();
+
+    let mut validator_library = Library::default();
+
+    let bootstrap_validator = Validator::new(DockerImage::new(
+        registry_name.clone(),
+        ValidatorType::Bootstrap,
+        image_name.clone(),
+        image_tag.clone(),
+    ));
+    validator_library.set_item(bootstrap_validator, ValidatorType::Bootstrap);
 
     if build_config.docker_build() {
-        match docker.build_image(solana_root.get_root_path(), &docker_image) {
-            Ok(_) => info!("{} image built successfully", docker_image.validator_type()),
-            Err(err) => {
-                error!("Exiting........ {err}");
-                return;
+        for v in validator_library.get_validators() {
+            match docker.build_image(solana_root.get_root_path(), v.image()) {
+                Ok(_) => info!("{} image built successfully", v.validator_type()),
+                Err(err) => {
+                    error!("Failed to build docker image {err}");
+                    return;
+                }
             }
         }
 
-        match DockerConfig::push_image(&docker_image) {
-            Ok(_) => info!(
-                "{} image pushed successfully",
-                docker_image.validator_type()
-            ),
+        match docker.push_images(validator_library.get_validators()) {
+            Ok(_) => info!("Validator images pushed successfully"),
             Err(err) => {
-                error!("Error. Failed to build imge: {err}");
+                error!("Failed to push Validator docker image {err}");
                 return;
             }
         }
     }
 
-    let bootstrap_secret = match kub_controller
-        .create_bootstrap_secret("bootstrap-accounts-secret", &config_directory)
-    {
-        Ok(secret) => secret,
+    let bootstrap_validator = validator_library.bootstrap().expect("should be bootstrap");
+    match kub_controller.create_bootstrap_secret("bootstrap-accounts-secret", &config_directory) {
+        Ok(secret) => bootstrap_validator.set_secret(secret),
         Err(err) => {
             error!("Failed to create bootstrap secret! {err}");
             return;
         }
     };
 
-    match kub_controller.deploy_secret(&bootstrap_secret).await {
+    match kub_controller
+        .deploy_secret(bootstrap_validator.secret())
+        .await
+    {
         Ok(_) => info!("Deployed Bootstrap Secret"),
         Err(err) => {
             error!("{err}");
@@ -377,21 +389,26 @@ async fn main() {
         }
     }
 
-    // Bootstrap needs two labels. Because it is going to have two services.
-    // One via Load Balancer, one direct
-    let mut bootstrap_rs_labels =
-        kub_controller.create_selector("validator/lb", "load-balancer-selector");
-    bootstrap_rs_labels.insert(
-        "validator/name".to_string(),
-        "bootstrap-validator-selector".to_string(),
-    );
-    bootstrap_rs_labels.insert("validator/type".to_string(), "bootstrap".to_string());
-
+    // Create bootstrap labels
     let identity_path = config_directory.join("bootstrap-validator/identity.json");
     let bootstrap_keypair =
         read_keypair_file(identity_path).expect("Failed to read bootstrap keypair file");
-    bootstrap_rs_labels.insert(
-        "validator/identity".to_string(),
+    // Bootstrap needs two labels. It will have two services.
+    // One for Load Balancer, one direct
+    bootstrap_validator.add_label(
+        "load-balancer/name",
+        "load-balancer-selector",
+        LabelType::Service,
+    );
+    bootstrap_validator.add_label(
+        "service/name",
+        "bootstrap-validator-selector",
+        LabelType::Service,
+    );
+    bootstrap_validator.add_label("validator/type", "bootstrap", LabelType::Info);
+    bootstrap_validator.add_label(
+        "validator/identity",
         bootstrap_keypair.pubkey().to_string(),
+        LabelType::Info,
     );
 }

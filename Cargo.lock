@@ -7132,6 +7132,7 @@ dependencies = [
  "kube",
  "log",
  "rand 0.8.5",
+ "rayon",
  "reqwest",
  "rustc_version",
  "rustls",
