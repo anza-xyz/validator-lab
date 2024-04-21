@@ -30,7 +30,6 @@ pub struct BuildConfig {
     build_type: BuildType,
     solana_root_path: PathBuf,
     docker_build: bool,
-    _build_path: PathBuf,
 }
 
 impl BuildConfig {
@@ -40,17 +39,11 @@ impl BuildConfig {
         solana_root_path: &Path,
         docker_build: bool,
     ) -> Self {
-        let build_path = match deploy_method {
-            DeployMethod::Local(_) => solana_root_path.join("farf/bin"),
-            DeployMethod::ReleaseChannel(_) => solana_root_path.join("solana-release/bin"),
-        };
-
         BuildConfig {
             deploy_method,
             build_type,
             solana_root_path: solana_root_path.to_path_buf(),
             docker_build,
-            _build_path: build_path,
         }
     }
 
