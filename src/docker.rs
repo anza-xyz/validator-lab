@@ -117,7 +117,7 @@ impl DockerConfig {
             dockerfile.display()
         );
 
-        let output = match Command::new("sh")
+        let output = Command::new("sh")
             .arg("-c")
             .arg(&command)
             .stdout(Stdio::null())
@@ -125,10 +125,7 @@ impl DockerConfig {
             .spawn()
             .expect("Failed to execute command")
             .wait_with_output()
-        {
-            Ok(res) => Ok(res),
-            Err(err) => Err(Box::new(err) as Box<dyn Error>),
-        }?;
+            .map_err(Box::new)?;
 
         if !output.status.success() {
             return Err(output.status.to_string().into());
