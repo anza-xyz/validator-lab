@@ -1,10 +1,19 @@
 use {
     k8s_openapi::{api::core::v1::Secret, ByteString},
     kube::api::ObjectMeta,
-    std::{collections::BTreeMap, error::Error, path::PathBuf},
+    std::{
+        collections::{BTreeMap, HashMap},
+        error::Error,
+        path::PathBuf,
+    },
 };
 
-fn create_secret(name: &str, data: BTreeMap<String, ByteString>) -> Secret {
+pub enum SecretType {
+    Value { v: String },
+    File { path: PathBuf },
+}
+
+fn build_secret(name: &str, data: BTreeMap<String, ByteString>) -> Secret {
     Secret {
         metadata: ObjectMeta {
             name: Some(name.to_string()),
@@ -15,18 +24,24 @@ fn create_secret(name: &str, data: BTreeMap<String, ByteString>) -> Secret {
     }
 }
 
-pub fn create_secret_from_files(
+pub fn create_secret(
     secret_name: &str,
-    key_files: &[(PathBuf, &str)], //[pathbuf, key type]
+    secrets: HashMap<String, SecretType>,
 ) -> Result<Secret, Box<dyn Error>> {
-    let mut data = BTreeMap::new();
-    for (file_path, key_type) in key_files {
-        let file_content = std::fs::read(file_path)
-            .map_err(|err| format!("Failed to read file '{:?}': {}", file_path, err))?;
-        data.insert(format!("{key_type}.json"), ByteString(file_content));
+    let mut data: BTreeMap<String, ByteString> = BTreeMap::new();
+    for (label, value) in secrets {
+        match value {
+            SecretType::Value { v } => {
+                data.insert(label, ByteString(v.into_bytes()));
+            }
+            SecretType::File { path } => {
+                let file_content = std::fs::read(&path)
+                    .map_err(|err| format!("Failed to read file '{:?}': {}", path, err))?;
+                data.insert(label, ByteString(file_content));
+            }
+        }
     }
-
-    Ok(create_secret(secret_name, data))
+    Ok(build_secret(secret_name, data))
 }
 
 pub fn create_selector(key: &str, value: &str) -> BTreeMap<String, String> {

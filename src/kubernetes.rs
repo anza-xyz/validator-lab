@@ -1,11 +1,15 @@
 use {
-    crate::k8s_helpers,
+    crate::k8s_helpers::{self, SecretType},
     k8s_openapi::api::core::v1::{Namespace, Secret},
     kube::{
         api::{Api, ListParams, PostParams},
         Client,
     },
-    std::{collections::BTreeMap, error::Error, path::Path},
+    std::{
+        collections::{BTreeMap, HashMap},
+        error::Error,
+        path::Path,
+    },
 };
 
 pub struct Kubernetes {
@@ -43,14 +47,33 @@ impl Kubernetes {
         let vote_key_path = config_dir.join("bootstrap-validator/vote-account.json");
         let stake_key_path = config_dir.join("bootstrap-validator/stake-account.json");
 
-        let key_files = vec![
-            (faucet_key_path, "faucet"),
-            (identity_key_path, "identity"),
-            (vote_key_path, "vote"),
-            (stake_key_path, "stake"),
-        ];
+        let mut secrets = HashMap::new();
+        secrets.insert(
+            "faucet".to_string(),
+            SecretType::File {
+                path: faucet_key_path,
+            },
+        );
+        secrets.insert(
+            "identity".to_string(),
+            SecretType::File {
+                path: identity_key_path,
+            },
+        );
+        secrets.insert(
+            "vote".to_string(),
+            SecretType::File {
+                path: vote_key_path,
+            },
+        );
+        secrets.insert(
+            "stake".to_string(),
+            SecretType::File {
+                path: stake_key_path,
+            },
+        );
 
-        k8s_helpers::create_secret_from_files(secret_name, &key_files)
+        k8s_helpers::create_secret(secret_name, secrets)
     }
 
     pub async fn deploy_secret(&self, secret: &Secret) -> Result<Secret, kube::Error> {
