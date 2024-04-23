@@ -24,7 +24,7 @@
     - [ ] RPC nodes
     - [ ] Client
 - [ ] Create & Deploy Selector
-    - [ ] Bootstrap
+    - [x] Bootstrap
     - [ ] Validator (regular)
     - [ ] RPC nodes
     - [ ] Client

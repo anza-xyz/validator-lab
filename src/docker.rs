@@ -1,6 +1,10 @@
 use {
-    crate::{new_spinner_progress_bar, release::DeployMethod, ValidatorType, BUILD, ROCKET},
+    crate::{
+        new_spinner_progress_bar, release::DeployMethod, startup_scripts::StartupScripts,
+        validator::Validator, DockerPushThreadError, ValidatorType, BUILD, ROCKET,
+    },
     log::*,
+    rayon::prelude::*,
     std::{
         error::Error,
         fmt::{self, Display, Formatter},
@@ -10,6 +14,7 @@ use {
     },
 };
 
+#[derive(Clone)]
 pub struct DockerImage {
     registry: String,
     validator_type: ValidatorType,
@@ -65,7 +70,6 @@ impl DockerConfig {
     pub fn build_image(
         &self,
         solana_root_path: &Path,
-        lab_path: &Path,
         docker_image: &DockerImage,
     ) -> Result<(), Box<dyn Error>> {
         let validator_type = docker_image.validator_type();
@@ -82,7 +86,6 @@ impl DockerConfig {
         let docker_path = solana_root_path.join(format!("docker-build/{validator_type}"));
         self.create_base_image(
             solana_root_path,
-            lab_path,
             docker_image,
             &docker_path,
             &validator_type,
@@ -94,12 +97,11 @@ impl DockerConfig {
     fn create_base_image(
         &self,
         solana_root_path: &Path,
-        lab_path: &Path,
         docker_image: &DockerImage,
         docker_path: &PathBuf,
         validator_type: &ValidatorType,
     ) -> Result<(), Box<dyn Error>> {
-        self.create_dockerfile(validator_type, docker_path, lab_path, None)?;
+        self.create_dockerfile(validator_type, docker_path, None)?;
 
         // We use std::process::Command here because Docker-rs is very slow building dockerfiles
         // when they are in large repos. Docker-rs doesn't seem to support the `--file` flag natively.
@@ -115,7 +117,7 @@ impl DockerConfig {
             dockerfile.display()
         );
 
-        let output = match Command::new("sh")
+        let output = Command::new("sh")
             .arg("-c")
             .arg(&command)
             .stdout(Stdio::null())
@@ -123,10 +125,7 @@ impl DockerConfig {
             .spawn()
             .expect("Failed to execute command")
             .wait_with_output()
-        {
-            Ok(res) => Ok(res),
-            Err(err) => Err(Box::new(err) as Box<dyn Error>),
-        }?;
+            .map_err(Box::new)?;
 
         if !output.status.success() {
             return Err(output.status.to_string().into());
@@ -137,22 +136,18 @@ impl DockerConfig {
         Ok(())
     }
 
-    fn copy_file_to_docker(
-        source_dir: &Path,
-        docker_dir: &Path,
+    fn write_startup_script_to_docker_directory(
         file_name: &str,
+        docker_dir: &Path,
     ) -> std::io::Result<()> {
-        let source_path = source_dir.join("src/scripts").join(file_name);
-        let destination_path = docker_dir.join(file_name);
-        fs::copy(source_path, destination_path)?;
-        Ok(())
+        let script_path = docker_dir.join(file_name);
+        StartupScripts::write_script_to_file(StartupScripts::bootstrap(), &script_path)
     }
 
     fn create_dockerfile(
         &self,
         validator_type: &ValidatorType,
         docker_path: &PathBuf,
-        lab_path: &Path,
         content: Option<&str>,
     ) -> Result<(), Box<dyn Error>> {
         if docker_path.exists() {
@@ -160,21 +155,19 @@ impl DockerConfig {
         }
         fs::create_dir_all(docker_path)?;
 
-        if let DeployMethod::Local(_) = self.deploy_method {
-            if validator_type == &ValidatorType::Bootstrap {
-                let files_to_copy = ["bootstrap-startup-script.sh", "common.sh"];
-                for file_name in files_to_copy.iter() {
-                    Self::copy_file_to_docker(lab_path, docker_path, file_name)?;
-                }
+        if validator_type == &ValidatorType::Bootstrap {
+            let files_to_copy = ["bootstrap-startup-script.sh", "common.sh"];
+            for file_name in files_to_copy.iter() {
+                Self::write_startup_script_to_docker_directory(file_name, docker_path)?;
             }
         }
 
-        let (solana_build_directory, startup_script_directory) =
-            if let DeployMethod::ReleaseChannel(_) = self.deploy_method {
-                ("solana-release", "./src/scripts".to_string())
-            } else {
-                ("farf", format!("./docker-build/{validator_type}"))
-            };
+        let startup_script_directory = format!("./docker-build/{validator_type}");
+        let solana_build_directory = if let DeployMethod::ReleaseChannel(_) = self.deploy_method {
+            "solana-release"
+        } else {
+            "farf"
+        };
 
         let dockerfile = format!(
             r#"
@@ -186,6 +179,7 @@ RUN apt-get update && apt-get install -y iputils-ping curl vim && \
 
 USER solana
 COPY --chown=solana:solana  {startup_script_directory} /home/solana/k8s-cluster-scripts
+RUN chmod +x /home/solana/k8s-cluster-scripts/*
 COPY --chown=solana:solana ./config-k8s/bootstrap-validator  /home/solana/ledger
 COPY --chown=solana:solana ./{solana_build_directory}/bin/ /home/solana/.cargo/bin/
 COPY --chown=solana:solana ./{solana_build_directory}/version.yml /home/solana/
@@ -204,14 +198,13 @@ WORKDIR /home/solana
         Ok(())
     }
 
-    pub fn push_image(docker_image: &DockerImage) -> Result<(), Box<dyn Error>> {
+    pub fn push_image(docker_image: &DockerImage) -> Result<(), Box<dyn Error + Send>> {
         let progress_bar = new_spinner_progress_bar();
         progress_bar.set_message(format!(
-            "{ROCKET}Pushing {} image to registry...",
-            docker_image.validator_type()
+            "{ROCKET}Pushing {docker_image} image to registry...",
         ));
-        let command = format!("docker push '{}'", docker_image);
-        let output = match Command::new("sh")
+        let command = format!("docker push '{docker_image}'");
+        let output = Command::new("sh")
             .arg("-c")
             .arg(&command)
             .stdout(Stdio::null())
@@ -219,15 +212,26 @@ WORKDIR /home/solana
             .spawn()
             .expect("Failed to execute command")
             .wait_with_output()
-        {
-            Ok(res) => Ok(res),
-            Err(err) => Err(Box::new(err) as Box<dyn Error>),
-        }?;
+            .expect("Failed to push image");
 
         if !output.status.success() {
-            return Err(output.status.to_string().into());
+            return Err(Box::new(DockerPushThreadError::from(
+                output.status.to_string(),
+            )));
         }
         progress_bar.finish_and_clear();
         Ok(())
+    }
+
+    pub fn push_images<'a, I>(&self, validators: I) -> Result<(), Box<dyn Error + Send>>
+    where
+        I: IntoIterator<Item = &'a Validator>,
+    {
+        info!("Pushing images...");
+        validators
+            .into_iter()
+            .collect::<Vec<_>>() // Collect into Vec and thread push
+            .par_iter()
+            .try_for_each(|validator| Self::push_image(validator.image()))
     }
 }

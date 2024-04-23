@@ -5,6 +5,8 @@ use {
     log::*,
     reqwest::Client,
     std::{
+        error::Error,
+        fmt::{self, Display, Formatter},
         fs::File,
         io::{BufReader, Cursor, Read, Write},
         path::{Path, PathBuf},
@@ -20,7 +22,7 @@ const UPGRADEABLE_LOADER: &str = "BPFLoaderUpgradeab1e11111111111111111111111";
 #[derive(Clone, Debug)]
 pub struct EnvironmentConfig<'a> {
     pub namespace: &'a str,
-    pub lab_path: PathBuf, // path to the validator-lab directory
+    pub build_directory: Option<PathBuf>, // path to the validator-lab directory
 }
 
 pub struct SolanaRoot {
@@ -37,6 +39,13 @@ impl SolanaRoot {
     }
 }
 
+struct GenesisProgram<'a> {
+    name: &'a str,
+    version: &'a str,
+    address: &'a str,
+    loader: &'a str,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Display)]
 pub enum ValidatorType {
     #[strum(serialize = "bootstrap-validator")]
@@ -49,11 +58,41 @@ pub enum ValidatorType {
     Client,
 }
 
+#[derive(Debug)]
+struct DockerPushThreadError {
+    message: String,
+}
+
+impl Display for DockerPushThreadError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl Error for DockerPushThreadError {}
+
+impl From<String> for DockerPushThreadError {
+    fn from(message: String) -> Self {
+        DockerPushThreadError { message }
+    }
+}
+
+impl From<&str> for DockerPushThreadError {
+    fn from(message: &str) -> Self {
+        DockerPushThreadError {
+            message: message.to_string(),
+        }
+    }
+}
+
 pub mod docker;
 pub mod genesis;
 pub mod k8s_helpers;
 pub mod kubernetes;
+pub mod library;
 pub mod release;
+pub mod startup_scripts;
+pub mod validator;
 
 static BUILD: Emoji = Emoji("👷 ", "");
 static PACKAGE: Emoji = Emoji("📦 ", "");
@@ -140,12 +179,13 @@ async fn fetch_program(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let so_filename = format!("spl_{}-{}.so", name.replace('-', "_"), version);
     let so_path = solana_root_path.join(&so_filename);
+    let so_name = format!("spl_{}.so", name.replace('-', "_"));
 
     if !so_path.exists() {
         info!("Downloading {} {}", name, version);
         let url = format!(
             "https://github.com/solana-labs/solana-program-library/releases/download/{}-v{}/{}",
-            name, version, so_filename
+            name, version, so_name
         );
 
         download_to_temp(&url, &so_path)
@@ -160,44 +200,56 @@ pub async fn fetch_spl(solana_root_path: &Path) -> Result<(), Box<dyn std::error
     let mut genesis_args = vec![];
 
     let programs = vec![
-        (
-            "token",
-            "3.5.0",
-            "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
-            "BPFLoader2111111111111111111111111111111111",
-        ),
-        (
-            "token-2022",
-            "0.9.0",
-            "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
-            UPGRADEABLE_LOADER,
-        ),
-        (
-            "associated-token-account",
-            "1.1.2",
-            "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
-            "BPFLoader2111111111111111111111111111111111",
-        ),
+        GenesisProgram {
+            name: "token",
+            version: "3.5.0",
+            address: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+            loader: "BPFLoader2111111111111111111111111111111111",
+        },
+        GenesisProgram {
+            name: "token-2022",
+            version: "0.9.0",
+            address: "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+            loader: UPGRADEABLE_LOADER,
+        },
+        GenesisProgram {
+            name: "memo",
+            version: "1.0.0",
+            address: "Memo1UhkJRfHyvLMcVucJwxXeuD728EqVDDwQDxFMNo",
+            loader: "BPFLoader1111111111111111111111111111111111",
+        },
+        GenesisProgram {
+            name: "associated-token-account",
+            version: "1.1.2",
+            address: "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+            loader: "BPFLoader2111111111111111111111111111111111",
+        },
+        GenesisProgram {
+            name: "feature-proposal",
+            version: "1.0.0",
+            address: "Feat1YXHhH6t1juaWF74WLcfv4XoNocjXA6sPWHNgAse",
+            loader: "BPFLoader2111111111111111111111111111111111",
+        },
     ];
 
-    for (name, version, address, loader) in programs {
-        fetch_program(name, version, solana_root_path).await?;
+    for program in programs {
+        fetch_program(program.name, program.version, solana_root_path).await?;
 
-        let arg = if loader == UPGRADEABLE_LOADER {
+        let arg = if program.loader == UPGRADEABLE_LOADER {
             format!(
                 "--upgradeable-program {} {} spl_{}-{}.so none",
-                address,
-                loader,
-                name.replace('-', "_"),
-                version
+                program.address,
+                program.loader,
+                program.name.replace('-', "_"),
+                program.version
             )
         } else {
             format!(
                 "--bpf-program {} {} spl_{}-{}.so",
-                address,
-                loader,
-                name.replace('-', "_"),
-                version
+                program.address,
+                program.loader,
+                program.name.replace('-', "_"),
+                program.version
             )
         };
         genesis_args.push(arg);

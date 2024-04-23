@@ -1,7 +1,8 @@
 use {
     clap::{command, Arg, ArgGroup},
     log::*,
-    std::fs,
+    solana_sdk::{signature::keypair::read_keypair_file, signer::Signer},
+    std::{fs, path::PathBuf},
     strum::VariantNames,
     validator_lab::{
         docker::{DockerConfig, DockerImage},
@@ -10,7 +11,9 @@ use {
             DEFAULT_FAUCET_LAMPORTS, DEFAULT_MAX_GENESIS_ARCHIVE_UNPACKED_SIZE,
         },
         kubernetes::Kubernetes,
+        library::Library,
         release::{BuildConfig, BuildType, DeployMethod},
+        validator::{LabelType, Validator},
         EnvironmentConfig, SolanaRoot, ValidatorType,
     },
 };
@@ -43,6 +46,7 @@ fn parse_matches() -> clap::ArgMatches {
             Arg::with_name("release_channel")
                 .long("release-channel")
                 .takes_value(true)
+                .requires("build_directory")
                 .help("Pulls specific release version. e.g. v1.17.2"),
         )
         .group(
@@ -51,12 +55,12 @@ fn parse_matches() -> clap::ArgMatches {
                 .required(true),
         )
         .arg(
-            Arg::with_name("validator_lab_directory")
-                .long("validator-lab-dir")
+            Arg::with_name("build_directory")
+                .long("build-dir")
                 .takes_value(true)
-                .required(true)
-                .help("Absolute path to validator lab directory. 
-                e.g. /home/sol/validator-lab"),
+                .conflicts_with("local_path")
+                .help("Absolute path to build directory for release-channel
+                e.g. /home/sol/validator-lab-build"),
         )
         // Genesis Config
         .arg(
@@ -168,7 +172,7 @@ async fn main() {
     let matches = parse_matches();
     let environment_config = EnvironmentConfig {
         namespace: matches.value_of("cluster_namespace").unwrap_or_default(),
-        lab_path: matches.value_of("validator_lab_directory").unwrap().into(),
+        build_directory: matches.value_of("build_directory").map(PathBuf::from),
     };
 
     let deploy_method = if let Some(local_path) = matches.value_of("local_path") {
@@ -186,7 +190,9 @@ async fn main() {
             (root, path)
         }
         DeployMethod::ReleaseChannel(_) => {
-            let root = SolanaRoot::new_from_path(environment_config.lab_path.clone());
+            // unwrap safe since required if release-channel used
+            let root =
+                SolanaRoot::new_from_path(environment_config.build_directory.unwrap().clone());
             let path = root.get_root_path().join("solana-release/bin");
             (root, path)
         }
@@ -326,54 +332,83 @@ async fn main() {
         deploy_method,
     );
 
-    let validator_type = ValidatorType::Bootstrap;
-    let docker_image = DockerImage::new(
-        matches.value_of("registry_name").unwrap().to_string(),
-        validator_type,
-        matches.value_of("image_name").unwrap().to_string(),
-        matches.value_of("image_tag").unwrap().to_string(),
-    );
+    let registry_name = matches.value_of("registry_name").unwrap().to_string();
+    let image_name = matches.value_of("image_name").unwrap().to_string();
+    let image_tag = matches
+        .value_of("image_tag")
+        .unwrap_or_default()
+        .to_string();
+
+    let mut validator_library = Library::default();
+
+    let bootstrap_validator = Validator::new(DockerImage::new(
+        registry_name.clone(),
+        ValidatorType::Bootstrap,
+        image_name.clone(),
+        image_tag.clone(),
+    ));
+    validator_library.set_item(bootstrap_validator, ValidatorType::Bootstrap);
 
     if build_config.docker_build() {
-        match docker.build_image(
-            solana_root.get_root_path(),
-            &environment_config.lab_path,
-            &docker_image,
-        ) {
-            Ok(_) => info!("{} image built successfully", docker_image.validator_type()),
-            Err(err) => {
-                error!("Exiting........ {err}");
-                return;
+        for v in validator_library.get_validators() {
+            match docker.build_image(solana_root.get_root_path(), v.image()) {
+                Ok(_) => info!("{} image built successfully", v.validator_type()),
+                Err(err) => {
+                    error!("Failed to build docker image {err}");
+                    return;
+                }
             }
         }
 
-        match DockerConfig::push_image(&docker_image) {
-            Ok(_) => info!(
-                "{} image pushed successfully",
-                docker_image.validator_type()
-            ),
+        match docker.push_images(validator_library.get_validators()) {
+            Ok(_) => info!("Validator images pushed successfully"),
             Err(err) => {
-                error!("Error. Failed to build imge: {err}");
+                error!("Failed to push Validator docker image {err}");
                 return;
             }
         }
     }
 
-    let bootstrap_secret = match kub_controller
-        .create_bootstrap_secret("bootstrap-accounts-secret", &config_directory)
-    {
-        Ok(secret) => secret,
+    let bootstrap_validator = validator_library.bootstrap().expect("should be bootstrap");
+    match kub_controller.create_bootstrap_secret("bootstrap-accounts-secret", &config_directory) {
+        Ok(secret) => bootstrap_validator.set_secret(secret),
         Err(err) => {
-            error!("Failed to create bootstrap secret! {}", err);
+            error!("Failed to create bootstrap secret! {err}");
             return;
         }
     };
 
-    match kub_controller.deploy_secret(&bootstrap_secret).await {
+    match kub_controller
+        .deploy_secret(bootstrap_validator.secret())
+        .await
+    {
         Ok(_) => info!("Deployed Bootstrap Secret"),
         Err(err) => {
-            error!("{}", err);
+            error!("{err}");
             return;
         }
     }
+
+    // Create bootstrap labels
+    let identity_path = config_directory.join("bootstrap-validator/identity.json");
+    let bootstrap_keypair =
+        read_keypair_file(identity_path).expect("Failed to read bootstrap keypair file");
+    // Bootstrap needs two labels. It will have two services.
+    // One for Load Balancer, one direct
+    bootstrap_validator.add_label(
+        "load-balancer/name",
+        "load-balancer-selector",
+        LabelType::Service,
+    );
+    bootstrap_validator.add_label(
+        "service/name",
+        "bootstrap-validator-selector",
+        LabelType::Service,
+    );
+    bootstrap_validator.add_label("validator/type", "bootstrap", LabelType::Info);
+    bootstrap_validator.add_label(
+        "validator/identity",
+        bootstrap_keypair.pubkey().to_string(),
+        LabelType::Info,
+    );
 }
