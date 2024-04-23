@@ -209,7 +209,7 @@ pub async fn fetch_spl(solana_root_path: &Path) -> Result<(), Box<dyn std::error
         },
         GenesisProgram {
             name: "token-2022",
-            version: "0.9.0",
+            version: "1.0.0",
             address: "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
             loader: UPGRADEABLE_LOADER,
         },
