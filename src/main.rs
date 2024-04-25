@@ -8,6 +8,7 @@ use {
     std::{fs, thread, time::Duration},
     strum::VariantNames,
     validator_lab::{
+        add_tag_to_name,
         client_config::{parse_and_format_bench_tps_args, ClientConfig},
         docker::{DockerConfig, DockerImage},
         genesis::{
@@ -71,6 +72,21 @@ fn parse_matches() -> clap::ArgMatches {
             ArgGroup::new("required_group")
                 .args(&["local_path", "release_channel"])
                 .required(true),
+        )
+        // Multiple Deployment Config
+        .arg(
+            Arg::with_name("deployment_tag")
+                .long("deployment-tag")
+                .takes_value(true)
+                .help("Add tag as suffix to this deployment's k8s components. Helps differentiate between two deployments
+                in the same cluster. Tag gets added to pod, service, replica-set, etc names. As a result the tag must consist of
+                lower case alphanumeric characters or '-', start with an alphabetic character, and end with an alphanumeric character
+                (e.g. 'v1-16-5', 'v1', etc, regex used for validation is '[a-z]([-a-z0-9]*[a-z0-9])?')"),
+        )
+        .arg(
+            Arg::with_name("no_bootstrap")
+                .long("no-bootstrap")
+                .help("Do not deploy a bootstrap validator. Used when deploying multiple clusters"),
         )
         // Genesis Config
         .arg(
@@ -317,6 +333,11 @@ fn parse_matches() -> clap::ArgMatches {
                 .takes_value(true)
                 .help("Client Config. Optional: Wait for NUM nodes to converge: --num-nodes <NUM> "),
         )
+        .arg(
+            Arg::with_name("run_client")
+                .long("run-client")
+                .help("Run the client(s)"),
+        )
         // kubernetes config
         .arg(
             Arg::with_name("cpu_requests")
@@ -417,6 +438,7 @@ async fn main() {
         num_nodes: matches
             .value_of("num_nodes")
             .map(|value_str| value_str.parse().expect("Invalid value for num_nodes")),
+        run_client: matches.is_present("run_client"),
     };
 
     let deploy_method = if let Some(local_path) = matches.value_of("local_path") {
@@ -547,6 +569,9 @@ async fn main() {
         known_validators: None,
     };
 
+    let deployment_tag = matches.value_of("deployment_tag").map(|t| t.to_string());
+    let no_bootstrap = matches.is_present("no_bootstrap");
+
     let pod_requests = PodRequests::new(
         matches.value_of("cpu_requests").unwrap().to_string(),
         matches.value_of("memory_requests").unwrap().to_string(),
@@ -568,6 +593,7 @@ async fn main() {
         pod_requests,
         metrics,
         client_config.clone(),
+        deployment_tag.clone(),
     )
     .await;
 
@@ -595,51 +621,54 @@ async fn main() {
     }
 
     let config_directory = solana_root.get_root_path().join("config-k8s");
-    let mut genesis = Genesis::new(config_directory.clone(), genesis_flags);
+    let retain_previous_genesis = no_bootstrap;
+    let mut genesis = Genesis::new(config_directory.clone(), genesis_flags, retain_previous_genesis);
 
-    match genesis.generate_faucet() {
-        Ok(_) => (),
-        Err(err) => {
-            error!("generate faucet error! {err}");
-            return;
-        }
-    }
-
-    match genesis.generate_accounts(ValidatorType::Bootstrap, 1) {
-        Ok(_) => (),
-        Err(err) => {
-            error!("generate accounts error! {err}");
-            return;
-        }
-    }
-
-    // only create client accounts once
-    if client_config.num_clients > 0 {
-        match genesis.create_client_accounts(
-            client_config.num_clients,
-            DEFAULT_CLIENT_LAMPORTS_PER_SIGNATURE,
-            &config_directory,
-            &deploy_method,
-            &solana_root.get_root_path(),
-        ) {
-            Ok(_) => info!("Client accounts created successfully"),
+    if !no_bootstrap {
+        match genesis.generate_faucet() {
+            Ok(_) => (),
             Err(err) => {
-                error!("generate client accounts error! {err}");
+                error!("generate faucet error! {err}");
+                return;
+            }
+        }
+    
+        match genesis.generate_accounts(ValidatorType::Bootstrap, 1, None) {
+            Ok(_) => (),
+            Err(err) => {
+                error!("generate accounts error! {err}");
+                return;
+            }
+        }
+
+        // only create client accounts once
+        if client_config.num_clients > 0 && client_config.client_to_run == "bench-tps"{
+            match genesis.create_client_accounts(
+                client_config.num_clients,
+                DEFAULT_CLIENT_LAMPORTS_PER_SIGNATURE,
+                &config_directory,
+                &deploy_method,
+                &solana_root.get_root_path(),
+            ) {
+                Ok(_) => info!("Client accounts created successfully"),
+                Err(err) => {
+                    error!("generate client accounts error! {err}");
+                    return;
+                }
+            }
+        }
+
+        // creates genesis and writes to binary file
+        match genesis.generate(solana_root.get_root_path(), build_config.build_path()) {
+            Ok(_) => (),
+            Err(err) => {
+                error!("generate genesis error! {err}");
                 return;
             }
         }
     }
 
-    // creates genesis and writes to binary file
-    match genesis.generate(solana_root.get_root_path(), build_config.build_path()) {
-        Ok(_) => (),
-        Err(err) => {
-            error!("generate genesis error! {err}");
-            return;
-        }
-    }
-
-    match genesis.generate_accounts(ValidatorType::Standard, num_validators) {
+    match genesis.generate_accounts(ValidatorType::Standard, num_validators, deployment_tag.clone()) {
         Ok(_) => (),
         Err(err) => {
             error!("generate accounts error! {err}");
@@ -647,7 +676,7 @@ async fn main() {
         }
     }
 
-    match genesis.generate_accounts(ValidatorType::RPC, num_rpc_nodes) {
+    match genesis.generate_accounts(ValidatorType::RPC, num_rpc_nodes, deployment_tag.clone()) {
         Ok(_) => (),
         Err(err) => {
             error!("generate rpc accounts error! {err}");
@@ -682,14 +711,17 @@ async fn main() {
 
     let mut validator_library = Library::default();
 
-    let bootstrap_validator = Validator::new(DockerImage::new(
-        registry_name.clone(),
-        ValidatorType::Bootstrap,
-        image_name.clone(),
-        image_tag.clone(),
-        None,
-    ));
-    validator_library.set_item(bootstrap_validator, ValidatorType::Bootstrap);
+    if !no_bootstrap {
+        let bootstrap_validator = Validator::new(DockerImage::new(
+            registry_name.clone(),
+            ValidatorType::Bootstrap,
+            image_name.clone(),
+            image_tag.clone(),
+            None,
+        ));
+        validator_library.set_item(bootstrap_validator, ValidatorType::Bootstrap);
+    }
+
 
     if num_validators > 0 {
         let validator = Validator::new(DockerImage::new(
@@ -759,7 +791,7 @@ async fn main() {
     }
 
     // metrics secret create once and use by all pods
-    if kub_controller.metrics.is_some() {
+    if kub_controller.metrics.is_some() && !no_bootstrap {
         let metrics_secret = match kub_controller.create_metrics_secret() {
             Ok(secret) => secret,
             Err(err) => {
@@ -776,120 +808,124 @@ async fn main() {
         }
     };
 
-    let bootstrap_validator = validator_library.bootstrap().expect("should be bootstrap");
-    match kub_controller.create_bootstrap_secret("bootstrap-accounts-secret", &config_directory) {
-        Ok(secret) => bootstrap_validator.set_secret(secret),
-        Err(err) => {
-            error!("Failed to create bootstrap secret! {err}");
-            return;
-        }
-    };
-
-    match kub_controller
-        .deploy_secret(bootstrap_validator.secret())
-        .await
-    {
-        Ok(_) => info!("Deployed Bootstrap Secret"),
-        Err(err) => {
-            error!("{err}");
-            return;
-        }
-    }
-
-    // Create bootstrap labels
-    let identity_path = config_directory.join("bootstrap-validator/identity.json");
-    let bootstrap_keypair =
-        read_keypair_file(identity_path).expect("Failed to read bootstrap keypair file");
-    bootstrap_validator.add_label(
-        "load-balancer/name",
-        "load-balancer-selector",
-        LabelType::ValidatorReplicaSet,
-    );
-    bootstrap_validator.add_label(
-        "service/name",
-        "bootstrap-validator-selector",
-        LabelType::ValidatorReplicaSet,
-    );
-    bootstrap_validator.add_label(
-        "validator/type",
-        "bootstrap",
-        LabelType::ValidatorReplicaSet,
-    );
-    bootstrap_validator.add_label(
-        "validator/identity",
-        bootstrap_keypair.pubkey().to_string(),
-        LabelType::ValidatorReplicaSet,
-    );
-
-    // create bootstrap replica set
-    match kub_controller.create_bootstrap_validator_replica_set(
-        bootstrap_validator.image(),
-        bootstrap_validator.secret().metadata.name.clone(),
-        bootstrap_validator.replica_set_labels(),
-    ) {
-        Ok(replica_set) => bootstrap_validator.set_replica_set(replica_set),
-        Err(err) => {
-            error!("Error creating bootstrap validator replicas_set: {err}");
-            return;
-        }
-    };
-
-    match kub_controller
-        .deploy_replicas_set(bootstrap_validator.replica_set())
-        .await
-    {
-        Ok(_) => {
-            info!(
-                "{} deployed successfully",
-                bootstrap_validator.replica_set_name()
-            );
-        }
-        Err(err) => {
-            error!("Error! Failed to deploy bootstrap validator replicas_set. err: {err}");
-            return;
-        }
-    };
-
-    bootstrap_validator.add_label(
-        "service/name",
-        "bootstrap-validator-selector",
-        LabelType::ValidatorService,
-    );
-
-    let bootstrap_service = kub_controller.create_service(
-        "bootstrap-validator-service",
-        bootstrap_validator.service_labels(),
-    );
-    match kub_controller.deploy_service(&bootstrap_service).await {
-        Ok(_) => info!("bootstrap validator service deployed successfully"),
-        Err(err) => error!("Error! Failed to deploy bootstrap validator service. err: {err}"),
-    }
-
-    //load balancer service. only create one and use for all deployments
-    let load_balancer_label =
-        kub_controller.create_selector("load-balancer/name", "load-balancer-selector");
-    //create load balancer
-    let load_balancer = kub_controller
-        .create_validator_load_balancer("bootstrap-and-rpc-lb-service", &load_balancer_label);
-
-    //deploy load balancer
-    match kub_controller.deploy_service(&load_balancer).await {
-        Ok(_) => info!("load balancer service deployed successfully"),
-        Err(err) => error!("Error! Failed to deploy load balancer service. err: {err}"),
-    }
-
-    // wait for bootstrap replicaset to deploy
-    while {
+    //todo: could make this try to get bootstrap from library instead of !no_bootstrap check
+    //tbh could probably do this for all validators/rpc/clients
+    if !no_bootstrap {
+        let bootstrap_validator = validator_library.bootstrap().expect("should be bootstrap");
+        match kub_controller.create_bootstrap_secret("bootstrap-accounts-secret", &config_directory) {
+            Ok(secret) => bootstrap_validator.set_secret(secret),
+            Err(err) => {
+                error!("Failed to create bootstrap secret! {err}");
+                return;
+            }
+        };
+    
         match kub_controller
-            .check_replica_set_ready(bootstrap_validator.replica_set_name().as_str())
+            .deploy_secret(bootstrap_validator.secret())
             .await
         {
-            Ok(ok) => !ok, // Continue the loop if replica set is not ready: Ok(false)
-            Err(err) => panic!("Error occurred while checking replica set readiness: {err}"),
+            Ok(_) => info!("Deployed Bootstrap Secret"),
+            Err(err) => {
+                error!("{err}");
+                return;
+            }
         }
-    } {
-        info!("{} not ready...", bootstrap_validator.replica_set_name());
-        thread::sleep(Duration::from_secs(1));
+    
+        // Create bootstrap labels
+        let identity_path = config_directory.join("bootstrap-validator/identity.json");
+        let bootstrap_keypair =
+            read_keypair_file(identity_path).expect("Failed to read bootstrap keypair file");
+        bootstrap_validator.add_label(
+            "load-balancer/name",
+            "load-balancer-selector",
+            LabelType::ValidatorReplicaSet,
+        );
+        bootstrap_validator.add_label(
+            "service/name",
+            "bootstrap-validator-selector",
+            LabelType::ValidatorReplicaSet,
+        );
+        bootstrap_validator.add_label(
+            "validator/type",
+            "bootstrap",
+            LabelType::ValidatorReplicaSet,
+        );
+        bootstrap_validator.add_label(
+            "validator/identity",
+            bootstrap_keypair.pubkey().to_string(),
+            LabelType::ValidatorReplicaSet,
+        );
+    
+        // create bootstrap replica set
+        match kub_controller.create_bootstrap_validator_replica_set(
+            bootstrap_validator.image(),
+            bootstrap_validator.secret().metadata.name.clone(),
+            bootstrap_validator.replica_set_labels(),
+        ) {
+            Ok(replica_set) => bootstrap_validator.set_replica_set(replica_set),
+            Err(err) => {
+                error!("Error creating bootstrap validator replicas_set: {err}");
+                return;
+            }
+        };
+    
+        match kub_controller
+            .deploy_replicas_set(bootstrap_validator.replica_set())
+            .await
+        {
+            Ok(_) => {
+                info!(
+                    "{} deployed successfully",
+                    bootstrap_validator.replica_set_name()
+                );
+            }
+            Err(err) => {
+                error!("Error! Failed to deploy bootstrap validator replicas_set. err: {err}");
+                return;
+            }
+        };
+    
+        bootstrap_validator.add_label(
+            "service/name",
+            "bootstrap-validator-selector",
+            LabelType::ValidatorService,
+        );
+    
+        let bootstrap_service = kub_controller.create_bootstrap_service(
+            "bootstrap-validator-service",
+            bootstrap_validator.service_labels(),
+        );
+        match kub_controller.deploy_service(&bootstrap_service).await {
+            Ok(_) => info!("bootstrap validator service deployed successfully"),
+            Err(err) => error!("Error! Failed to deploy bootstrap validator service. err: {err}"),
+        }
+    
+        //load balancer service. only create one and use for all deployments
+        let load_balancer_label =
+            kub_controller.create_selector("load-balancer/name", "load-balancer-selector");
+        //create load balancer
+        let load_balancer = kub_controller
+            .create_validator_load_balancer("bootstrap-and-rpc-lb-service", &load_balancer_label);
+    
+        //deploy load balancer
+        match kub_controller.deploy_service(&load_balancer).await {
+            Ok(_) => info!("load balancer service deployed successfully"),
+            Err(err) => error!("Error! Failed to deploy load balancer service. err: {err}"),
+        }
+    
+        // wait for bootstrap replicaset to deploy
+        while {
+            match kub_controller
+                .check_replica_set_ready(bootstrap_validator.replica_set_name().as_str())
+                .await
+            {
+                Ok(ok) => !ok, // Continue the loop if replica set is not ready: Ok(false)
+                Err(err) => panic!("Error occurred while checking replica set readiness: {err}"),
+            }
+        } {
+            info!("{} not ready...", bootstrap_validator.replica_set_name());
+            thread::sleep(Duration::from_secs(1));
+        }
     }
 
     if num_rpc_nodes > 0 {
@@ -910,8 +946,15 @@ async fn main() {
                     return;
                 }
             }
+
+            let mut rpc_with_optional_tag = ValidatorType::RPC.to_string();
+            if let Some(tag) = &deployment_tag {
+                rpc_with_optional_tag =
+                    add_tag_to_name(rpc_with_optional_tag.as_str(), tag);
+            }
+
             let identity_path =
-                config_directory.join(format!("rpc-node-identity-{rpc_index}.json"));
+                config_directory.join(format!("{rpc_with_optional_tag}-identity-{rpc_index}.json"));
             let rpc_keypair =
                 read_keypair_file(identity_path).expect("Failed to read rpc-node keypair file");
 
@@ -974,6 +1017,7 @@ async fn main() {
             let rpc_service = kub_controller.create_service(
                 format!("rpc-node-selector-{rpc_index}").as_str(),
                 rpc_node.service_labels(),
+                rpc_index,
             );
             match kub_controller.deploy_service(&rpc_service).await {
                 Ok(_) => info!("rpc node service deployed successfully"),
@@ -1032,8 +1076,14 @@ async fn main() {
             }
         }
 
+        let mut validator_with_optional_tag = ValidatorType::RPC.to_string();
+        if let Some(tag) = &deployment_tag {
+            validator_with_optional_tag =
+                add_tag_to_name(validator_with_optional_tag.as_str(), tag);
+        }
+
         let identity_path =
-            config_directory.join(format!("validator-identity-{validator_index}.json"));
+            config_directory.join(format!("{validator_with_optional_tag}-identity-{validator_index}.json"));
         let validator_keypair =
             read_keypair_file(identity_path).expect("Failed to read validator keypair file");
 
@@ -1083,8 +1133,9 @@ async fn main() {
         };
 
         let validator_service = kub_controller.create_service(
-            &format!("validator-service-{validator_index}"),
+            "validator-service",
             validator.replica_set_labels(),
+            validator_index,
         );
         match kub_controller.deploy_service(&validator_service).await {
             Ok(_) => info!("validator service ({validator_index}) deployed successfully"),
@@ -1094,7 +1145,7 @@ async fn main() {
         }
     }
 
-    if client_config.num_clients <= 0 {
+    if !client_config.run_client || client_config.num_clients <= 0 {
         return;
     }
 
@@ -1153,6 +1204,7 @@ async fn main() {
         let client_service = kub_controller.create_service(
             &format!("client-service-{client_index}"),
             client.replica_set_labels(),
+            client_index,
         );
         match kub_controller.deploy_service(&client_service).await {
             Ok(_) => info!("client service ({client_index}) deployed successfully"),

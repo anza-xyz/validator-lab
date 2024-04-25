@@ -1,7 +1,7 @@
 use {
     crate::{
         client_config::ClientConfig, docker::DockerImage, k8s_helpers,
-        validator_config::ValidatorConfig, Metrics, ValidatorType,
+        validator_config::ValidatorConfig, Metrics, ValidatorType, add_tag_to_name,
     },
     k8s_openapi::{
         api::{
@@ -48,6 +48,7 @@ pub struct Kubernetes<'a> {
     pod_requests: PodRequests,
     pub metrics: Option<Metrics>,
     client_config: ClientConfig,
+    deployment_tag: Option<String>,
 }
 
 impl<'a> Kubernetes<'a> {
@@ -57,6 +58,7 @@ impl<'a> Kubernetes<'a> {
         pod_requests: PodRequests,
         metrics: Option<Metrics>,
         client_config: ClientConfig,
+        deployment_tag: Option<String>,
     ) -> Kubernetes<'a> {
         Self {
             k8s_client: Client::try_default().await.unwrap(),
@@ -65,6 +67,7 @@ impl<'a> Kubernetes<'a> {
             pod_requests,
             metrics,
             client_config,
+            deployment_tag,
         }
     }
 
@@ -107,7 +110,12 @@ impl<'a> Kubernetes<'a> {
             (stake_key_path, "stake"),
         ];
 
-        k8s_helpers::create_secret_from_files(secret_name, &key_files)
+        let mut secret_name_with_optional_tag = secret_name.to_string();
+        if let Some(tag) = &self.deployment_tag {
+            secret_name_with_optional_tag = add_tag_to_name(secret_name, tag);
+        }
+
+        k8s_helpers::create_secret_from_files(secret_name_with_optional_tag.as_str(), &key_files)
     }
 
     pub fn create_validator_secret(
@@ -115,22 +123,61 @@ impl<'a> Kubernetes<'a> {
         validator_index: usize,
         config_dir: &PathBuf,
     ) -> Result<Secret, Box<dyn Error>> {
-        let secret_name = format!("validator-accounts-secret-{validator_index}");
-
         let accounts = ["identity", "vote", "stake"];
         let key_files: Vec<(PathBuf, &str)> = accounts
             .iter()
             .map(|&account| {
+                let mut validator_with_optional_tag = ValidatorType::Standard.to_string();
+                if let Some(tag) = &self.deployment_tag {
+                    validator_with_optional_tag =
+                        add_tag_to_name(validator_with_optional_tag.as_str(), tag);
+                }
+                
                 let file_name = if account == "identity" {
-                    format!("validator-{account}-{validator_index}.json")
+                    format!("{validator_with_optional_tag}-{account}-{validator_index}.json")
                 } else {
-                    format!("validator-{account}-account-{validator_index}.json")
+                    format!("{validator_with_optional_tag}-{account}-account-{validator_index}.json")
                 };
                 (config_dir.join(file_name), account)
             })
             .collect();
 
-        k8s_helpers::create_secret_from_files(&secret_name, &key_files)
+        let mut secret_name_with_optional_tag = format!("{}-accounts-secret-{}", ValidatorType::Standard, validator_index);
+        if let Some(tag) = &self.deployment_tag {
+            secret_name_with_optional_tag =
+                add_tag_to_name(secret_name_with_optional_tag.as_str(), tag);
+        }
+
+        k8s_helpers::create_secret_from_files(&secret_name_with_optional_tag, &key_files)
+    }
+
+    pub fn create_rpc_secret(
+        &self,
+        rpc_index: usize,
+        config_dir: &PathBuf,
+    ) -> Result<Secret, Box<dyn Error>> {
+        let mut rpc_with_optional_tag = ValidatorType::RPC.to_string();
+        if let Some(tag) = &self.deployment_tag {
+            rpc_with_optional_tag =
+                add_tag_to_name(rpc_with_optional_tag.as_str(), tag);
+        }
+
+        let key_files = vec![
+            (
+                config_dir.join(format!("{rpc_with_optional_tag}-identity-{rpc_index}.json")),
+                "identity",
+            ),
+            (config_dir.join("faucet.json"), "faucet"),
+        ];
+
+        let mut secret_name_with_optional_tag =
+            format!("{}-accounts-secret-{rpc_index}", ValidatorType::RPC);
+        if let Some(tag) = &self.deployment_tag {
+            secret_name_with_optional_tag =
+                add_tag_to_name(secret_name_with_optional_tag.as_str(), tag);
+        }
+
+        k8s_helpers::create_secret_from_files(&secret_name_with_optional_tag, &key_files)
     }
 
     // use validator identity for client 1
@@ -140,12 +187,24 @@ impl<'a> Kubernetes<'a> {
         client_index: usize,
         config_dir: &PathBuf,
     ) -> Result<Secret, Box<dyn Error>> {
-        let secret_name = format!("client-accounts-secret-{client_index}");
+        let mut secret_name_with_optional_tag = format!("{}-accounts-secret-{}", ValidatorType::Client, client_index);
+        if let Some(tag) = &self.deployment_tag {
+            secret_name_with_optional_tag =
+                add_tag_to_name(secret_name_with_optional_tag.as_str(), tag);
+        }
+
+        // validator0 key being used as the identity key for the client
+        let mut validator_with_optional_tag = ValidatorType::Standard.to_string();
+        if let Some(tag) = &self.deployment_tag {
+            validator_with_optional_tag =
+                add_tag_to_name(validator_with_optional_tag.as_str(), tag);
+        }
+
         let faucet_key_path = config_dir.join("faucet.json");
-        let identity_key_path = config_dir.join(format!("validator-identity-{}.json", 0)); // validator 0 account
+        let identity_key_path = config_dir.join(format!("{validator_with_optional_tag}-identity-{}.json", 0)); // validator 0 account
         let key_files = vec![(faucet_key_path, "faucet"), (identity_key_path, "identity")];
 
-        k8s_helpers::create_secret_from_files(&secret_name, &key_files)
+        k8s_helpers::create_secret_from_files(&secret_name_with_optional_tag, &key_files)
     }
 
     fn add_known_validator(&mut self, pubkey: Pubkey) {
@@ -489,8 +548,14 @@ impl<'a> Kubernetes<'a> {
             vec!["/home/solana/k8s-cluster-scripts/validator-startup-script.sh".to_string()];
         command.extend(self.generate_validator_command_flags());
 
+        let mut replica_set_name_with_optional_tag = ValidatorType::Standard.to_string();
+        if let Some(tag) = &self.deployment_tag {
+            replica_set_name_with_optional_tag =
+                add_tag_to_name(replica_set_name_with_optional_tag.as_str(), tag);
+        }
+
         k8s_helpers::create_replica_set(
-            &format!("{}-{validator_index}", ValidatorType::Standard),
+            &format!("{replica_set_name_with_optional_tag}-{validator_index}"),
             self.namespace.as_str(),
             label_selector,
             image,
@@ -507,26 +572,22 @@ impl<'a> Kubernetes<'a> {
         &self,
         service_name: &str,
         label_selector: &BTreeMap<String, String>,
+        index: usize,
     ) -> Service {
-        k8s_helpers::create_service(service_name, self.namespace.as_str(), label_selector, false)
+        let mut service_name_with_optional_tag = service_name.to_string();
+        if let Some(tag) = &self.deployment_tag {
+            service_name_with_optional_tag =
+                add_tag_to_name(service_name_with_optional_tag.as_str(), tag);
+        }
+        k8s_helpers::create_service(&format!("{service_name_with_optional_tag}-{index}"), self.namespace.as_str(), label_selector, false)
     }
 
-    pub fn create_rpc_secret(
+    pub fn create_bootstrap_service(
         &self,
-        rpc_index: usize,
-        config_dir: &PathBuf,
-    ) -> Result<Secret, Box<dyn Error>> {
-        let secret_name = format!("rpc-node-account-secret-{rpc_index}");
-
-        let key_files = vec![
-            (
-                config_dir.join(format!("rpc-node-identity-{rpc_index}.json")),
-                "identity",
-            ),
-            (config_dir.join("faucet.json"), "faucet"),
-        ];
-
-        k8s_helpers::create_secret_from_files(&secret_name, &key_files)
+        service_name: &str,
+        label_selector: &BTreeMap<String, String>,
+    ) -> Service {
+        k8s_helpers::create_service(service_name, self.namespace.as_str(), label_selector, false)
     }
 
     pub fn create_rpc_replica_set(
@@ -590,8 +651,14 @@ impl<'a> Kubernetes<'a> {
             ..Default::default()
         };
 
+        let mut replica_set_name_with_optional_tag = ValidatorType::RPC.to_string();
+        if let Some(tag) = &self.deployment_tag {
+            replica_set_name_with_optional_tag =
+                add_tag_to_name(replica_set_name_with_optional_tag.as_str(), tag);
+        }
+
         k8s_helpers::create_replica_set(
-            &format!("{}-{rpc_index}", ValidatorType::RPC),
+            &format!("{replica_set_name_with_optional_tag}-{rpc_index}"),
             self.namespace.as_str(),
             label_selector,
             image,
@@ -636,8 +703,14 @@ impl<'a> Kubernetes<'a> {
             vec!["/home/solana/k8s-cluster-scripts/client-startup-script.sh".to_string()];
         command.extend(self.generate_client_command_flags());
 
+        let mut replica_set_name_with_optional_tag = ValidatorType::Client.to_string();
+        if let Some(tag) = &self.deployment_tag {
+            replica_set_name_with_optional_tag =
+                add_tag_to_name(replica_set_name_with_optional_tag.as_str(), tag);
+        }
+
         k8s_helpers::create_replica_set(
-            &format!("{}-{client_index}", ValidatorType::Client),
+            &format!("{replica_set_name_with_optional_tag}-{client_index}"),
             self.namespace.as_str(),
             label_selector,
             image,

@@ -10,6 +10,7 @@ pub struct ClientConfig {
     pub target_node: Option<Pubkey>,
     pub duration: u64,
     pub num_nodes: Option<u64>,
+    pub run_client: bool,
 }
 
 pub fn parse_and_format_bench_tps_args(bench_tps_args: Option<&str>) -> Option<Vec<String>> {

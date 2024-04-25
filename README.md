@@ -44,7 +44,6 @@ Example:
 cargo run --bin cluster -- 
     -n <namespace> 
     --num-validators <number-of-non-bootstrap-voting-validators>
-    --deploy-method local
     --local-path /home/sol/solana
     # genesis config. Optional: Many of these have defaults
     --hashes-per-tick <hashes-per-tick>
@@ -68,6 +67,13 @@ cargo run --bin cluster --
     # kubernetes config
     --cpu-requests <cores>
     --memory-requests <memory>
+    # client config
+    --client-delay-start <seconds-to-wait-after-deploying-validators-before-deploying-client>
+    --client-type <client-type e.g. tpu-client>
+    --client-to-run <type-of-client e.g. bench-tps>
+    --bench-tps-args <bench-tps-args e.g. tx-count=25000>
+    --num-nodes <wait-for-num-nodes-to-catch-up-before-launching-client>
+    --run-client # if not set, client accounts are created but no client is deployed
 ```
 
 #### RPC Nodes

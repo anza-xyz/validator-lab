@@ -1,5 +1,5 @@
 use {
-    crate::{new_spinner_progress_bar, release::DeployMethod, ValidatorType, SUN, WRITING},
+    crate::{new_spinner_progress_bar, release::DeployMethod, ValidatorType, SUN, WRITING, add_tag_to_name},
     anyhow::Error as AnyHowError,
     log::*,
     rand::Rng,
@@ -148,11 +148,13 @@ pub struct Genesis {
 }
 
 impl Genesis {
-    pub fn new(config_dir: PathBuf, flags: GenesisFlags) -> Self {
-        if config_dir.exists() {
-            std::fs::remove_dir_all(&config_dir).unwrap();
+    pub fn new(config_dir: PathBuf, flags: GenesisFlags, retain_previous_genesis_directory: bool) -> Self {
+        if !retain_previous_genesis_directory {
+            if config_dir.exists() {
+                std::fs::remove_dir_all(&config_dir).unwrap();
+            }
+            std::fs::create_dir_all(&config_dir).unwrap();
         }
-        std::fs::create_dir_all(&config_dir).unwrap();
 
         let seed: [u8; 32] = rand::thread_rng().gen();
 
@@ -176,6 +178,7 @@ impl Genesis {
         &mut self,
         validator_type: ValidatorType,
         number_of_accounts: usize,
+        deployment_tag: Option<String>,
     ) -> Result<(), Box<dyn Error>> {
         if number_of_accounts == 0 {
             return Ok(());
@@ -203,7 +206,7 @@ impl Genesis {
             .key_generator
             .gen_n_keypairs(total_accounts_to_generate as u64);
 
-        self.write_accounts_to_file(validator_type, account_types, keypairs)?;
+        self.write_accounts_to_file(validator_type, account_types, keypairs, deployment_tag)?;
 
         Ok(())
     }
@@ -213,23 +216,28 @@ impl Genesis {
         validator_type: ValidatorType,
         account_types: Vec<&str>,
         keypairs: Vec<Keypair>, //TODO: reference this
+        deployment_tag: Option<String>,
     ) -> Result<(), Box<dyn Error>> {
         for (i, keypair) in keypairs.iter().enumerate() {
             let account_index = i / account_types.len();
             let account = account_types[i % account_types.len()];
+            let mut filename_prefix = validator_type.to_string();
+            if let Some(ref tag) = deployment_tag {
+                filename_prefix = add_tag_to_name(filename_prefix.as_str(), tag);
+            }
             let filename = match validator_type {
                 ValidatorType::Bootstrap => {
-                    format!("{}/{}.json", validator_type.to_string(), account)
+                    format!("{}/{}.json", filename_prefix, account)
                 }
                 ValidatorType::Standard => format!(
                     "{}-{}-{}.json",
-                    validator_type.to_string(),
+                    filename_prefix,
                     account,
                     account_index
                 ),
                 ValidatorType::RPC => format!(
                     "{}-{}-{}.json",
-                    validator_type.to_string(),
+                    filename_prefix,
                     account,
                     account_index
                 ),
