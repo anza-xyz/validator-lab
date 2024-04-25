@@ -12,11 +12,7 @@ use {
         ByteString,
     },
     kube::api::ObjectMeta,
-    std::{
-        collections::{BTreeMap, HashMap},
-        error::Error,
-        path::PathBuf,
-    },
+    std::{collections::BTreeMap, error::Error, path::PathBuf},
 };
 
 pub enum SecretType {
@@ -37,21 +33,20 @@ fn build_secret(name: &str, data: BTreeMap<String, ByteString>) -> Secret {
 
 pub fn create_secret(
     secret_name: &str,
-    secrets: HashMap<String, SecretType>,
+    secrets: BTreeMap<String, SecretType>,
 ) -> Result<Secret, Box<dyn Error>> {
-    let mut data: BTreeMap<String, ByteString> = BTreeMap::new();
-    for (label, value) in secrets {
-        match value {
-            SecretType::Value { v } => {
-                data.insert(label, ByteString(v.into_bytes()));
-            }
+    let data = secrets
+        .into_iter()
+        .map(|(label, value)| match value {
+            SecretType::Value { v } => Ok((label, ByteString(v.into_bytes()))),
             SecretType::File { path } => {
-                let file_content = std::fs::read(&path)
+                let content = std::fs::read(&path)
                     .map_err(|err| format!("Failed to read file '{:?}': {}", path, err))?;
-                data.insert(label, ByteString(file_content));
+                Ok((label, ByteString(content)))
             }
-        }
-    }
+        })
+        .collect::<Result<BTreeMap<String, ByteString>, Box<dyn Error>>>()?;
+
     Ok(build_secret(secret_name, data))
 }
 

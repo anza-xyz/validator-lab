@@ -5,8 +5,6 @@ use {
     log::*,
     reqwest::Client,
     std::{
-        error::Error,
-        fmt::{self, Display, Formatter},
         fs::File,
         io::{BufReader, Cursor, Read, Write},
         path::{Path, PathBuf},
@@ -56,33 +54,6 @@ pub enum ValidatorType {
     RPC,
     #[strum(serialize = "client")]
     Client,
-}
-
-#[derive(Debug)]
-struct DockerPushThreadError {
-    message: String,
-}
-
-impl Display for DockerPushThreadError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.message)
-    }
-}
-
-impl Error for DockerPushThreadError {}
-
-impl From<String> for DockerPushThreadError {
-    fn from(message: String) -> Self {
-        DockerPushThreadError { message }
-    }
-}
-
-impl From<&str> for DockerPushThreadError {
-    fn from(message: &str) -> Self {
-        DockerPushThreadError {
-            message: message.to_string(),
-        }
-    }
 }
 
 pub mod docker;
@@ -178,18 +149,19 @@ async fn fetch_program(
     version: &str,
     solana_root_path: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let so_filename = format!("spl_{}-{}.so", name.replace('-', "_"), version);
-    let so_path = solana_root_path.join(&so_filename);
-    let so_name = format!("spl_{}.so", name.replace('-', "_"));
+    let name_with_underscores = name.replace('-', "_");
+    let so_filename = format!("spl_{name_with_underscores}-{version}.so");
+    let download_path = solana_root_path.join(&so_filename);
+    let so_name = format!("spl_{name_with_underscores}.so");
 
-    if !so_path.exists() {
-        info!("Downloading {} {}", name, version);
+    if !download_path.exists() {
+        info!("Downloading {name} {version}");
         let url = format!(
             "https://github.com/solana-labs/solana-program-library/releases/download/{}-v{}/{}",
             name, version, so_name
         );
 
-        download_to_temp(&url, &so_path)
+        download_to_temp(&url, &download_path)
             .await
             .map_err(|err| format!("Unable to download {url}. Error: {err}"))?;
     }

@@ -21,11 +21,7 @@ use {
     },
     log::*,
     solana_sdk::{pubkey::Pubkey, signature::keypair::read_keypair_file, signer::Signer},
-    std::{
-        collections::{BTreeMap, HashMap},
-        error::Error,
-        path::Path,
-    },
+    std::{collections::BTreeMap, error::Error, path::Path},
 };
 
 #[derive(Debug, Clone)]
@@ -93,7 +89,7 @@ impl<'a> Kubernetes<'a> {
             .expect("Failed to read bootstrap validator keypair file");
         self.add_known_validator(bootstrap_keypair.pubkey());
 
-        let mut secrets = HashMap::new();
+        let mut secrets = BTreeMap::new();
         secrets.insert(
             "faucet".to_string(),
             SecretType::File {
