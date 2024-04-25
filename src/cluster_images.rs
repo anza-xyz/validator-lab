@@ -9,36 +9,33 @@ use {
 // 3) RPC Node -> One image for each RPC node (not implemented yet)
 // 4) Clients -> Each client has its own image (not implemented yet)
 
-pub struct Library {
-    validators: Vec<Option<Validator>>,
-    _clients: Option<Vec<Validator>>,
+#[derive(Default)]
+pub struct ClusterImages {
+    bootstrap: Option<Validator>,
+    _validator: Option<Validator>,
+    _rpc: Option<Validator>,
+    _clients: Vec<Validator>,
 }
 
-impl Default for Library {
-    fn default() -> Self {
-        Self {
-            validators: vec![None; 1],
-            _clients: None,
-        }
-    }
-}
-
-impl Library {
+impl ClusterImages {
     pub fn set_item(&mut self, item: Validator, validator_type: ValidatorType) {
         match validator_type {
-            ValidatorType::Bootstrap => self.validators[0] = Some(item),
+            ValidatorType::Bootstrap => self.bootstrap = Some(item),
             _ => panic!("{validator_type} not implemented yet!"),
         }
     }
 
     pub fn bootstrap(&mut self) -> Result<&mut Validator, Box<dyn Error>> {
-        self.validators
-            .get_mut(0)
-            .and_then(Option::as_mut)
-            .ok_or_else(|| "No Bootstrap validator found.".to_string().into())
+        self.bootstrap
+            .as_mut()
+            .ok_or_else(|| "Bootstrap validator is not available".into())
     }
 
     pub fn get_validators(&self) -> impl Iterator<Item = &Validator> {
-        self.validators.iter().filter_map(Option::as_ref)
+        self.bootstrap
+            .iter()
+            .chain(self._validator.iter())
+            .chain(self._rpc.iter())
+            .filter_map(Some)
     }
 }

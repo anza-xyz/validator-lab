@@ -8,13 +8,13 @@ use {
     std::{fs, path::PathBuf},
     strum::VariantNames,
     validator_lab::{
+        cluster_images::ClusterImages,
         docker::{DockerConfig, DockerImage},
         genesis::{
             Genesis, GenesisFlags, DEFAULT_BOOTSTRAP_NODE_SOL, DEFAULT_BOOTSTRAP_NODE_STAKE_SOL,
             DEFAULT_FAUCET_LAMPORTS, DEFAULT_MAX_GENESIS_ARCHIVE_UNPACKED_SIZE,
         },
         kubernetes::{Kubernetes, PodRequests},
-        library::Library,
         release::{BuildConfig, BuildType, DeployMethod},
         validator::{LabelType, Validator},
         validator_config::ValidatorConfig,
@@ -444,7 +444,7 @@ async fn main() {
         .unwrap_or_default()
         .to_string();
 
-    let mut validator_library = Library::default();
+    let mut validator_library = ClusterImages::default();
 
     let bootstrap_validator = Validator::new(DockerImage::new(
         registry_name.clone(),

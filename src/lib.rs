@@ -56,11 +56,11 @@ pub enum ValidatorType {
     Client,
 }
 
+pub mod cluster_images;
 pub mod docker;
 pub mod genesis;
 pub mod k8s_helpers;
 pub mod kubernetes;
-pub mod library;
 pub mod release;
 pub mod startup_scripts;
 pub mod validator;
