@@ -197,6 +197,7 @@ impl Genesis {
             ValidatorType::Bootstrap | ValidatorType::Standard => (),
             ValidatorType::RPC => {
                 account_types.pop(); // no vote-account for RPC
+                account_types.pop(); // no stake-account for RPC
             }
             ValidatorType::Client => panic!("Client type not supported"),
         };

@@ -1076,7 +1076,7 @@ async fn main() {
             }
         }
 
-        let mut validator_with_optional_tag = ValidatorType::RPC.to_string();
+        let mut validator_with_optional_tag = ValidatorType::Standard.to_string();
         if let Some(tag) = &deployment_tag {
             validator_with_optional_tag =
                 add_tag_to_name(validator_with_optional_tag.as_str(), tag);
