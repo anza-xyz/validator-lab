@@ -75,12 +75,6 @@ while [[ -n $1 ]]; do
     elif [[ $1 = --enable-rpc-bigtable-ledger-storage ]]; then
       args+=("$1")
       shift
-    elif [[ $1 = --tpu-disable-quic ]]; then
-      args+=("$1")
-      shift
-    elif [[ $1 = --tpu-enable-udp ]]; then
-      args+=("$1")
-      shift
     elif [[ $1 = --rpc-send-batch-ms ]]; then # not enabled in net.sh
       args+=("$1" "$2")
       shift 2

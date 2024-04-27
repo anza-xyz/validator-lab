@@ -32,12 +32,10 @@ pub struct PodRequests {
 impl PodRequests {
     pub fn new(cpu_requests: String, memory_requests: String) -> PodRequests {
         PodRequests {
-            requests: vec![
+            requests: BTreeMap::from([
                 ("cpu".to_string(), Quantity(cpu_requests)),
                 ("memory".to_string(), Quantity(memory_requests)),
-            ]
-            .into_iter()
-            .collect(),
+            ]),
         }
     }
 }
@@ -119,13 +117,7 @@ impl<'a> Kubernetes<'a> {
     }
 
     fn add_known_validator(&mut self, pubkey: Pubkey) {
-        if let Some(ref mut known_validators) = self.validator_config.known_validators {
-            known_validators.push(pubkey);
-        } else {
-            let new_known_validators = vec![pubkey];
-            self.validator_config.known_validators = Some(new_known_validators);
-        }
-
+        self.validator_config.known_validators.push(pubkey);
         info!("pubkey added to known validators: {:?}", pubkey);
     }
 
@@ -173,12 +165,12 @@ impl<'a> Kubernetes<'a> {
         command.extend(self.generate_bootstrap_command_flags());
 
         k8s_helpers::create_replica_set(
-            &ValidatorType::Bootstrap,
-            self.namespace.as_str(),
-            label_selector,
-            image_name,
+            ValidatorType::Bootstrap,
+            self.namespace.clone(),
+            label_selector.clone(),
+            image_name.clone(),
             env_vars,
-            &command,
+            command.clone(),
             accounts_volume,
             accounts_volume_mount,
             self.pod_requests.requests.clone(),
@@ -187,12 +179,6 @@ impl<'a> Kubernetes<'a> {
     }
 
     fn generate_command_flags(&self, flags: &mut Vec<String>) {
-        if self.validator_config.tpu_enable_udp {
-            flags.push("--tpu-enable-udp".to_string());
-        }
-        if self.validator_config.tpu_disable_quic {
-            flags.push("--tpu-disable-quic".to_string());
-        }
         if self.validator_config.skip_poh_verify {
             flags.push("--skip-poh-verify".to_string());
         }

@@ -166,19 +166,10 @@ fn parse_matches() -> clap::ArgMatches {
         )
         // Bootstrap/Validator Config
         .arg(
-            Arg::with_name("tpu_enable_udp")
-                .long("tpu-enable-udp")
-                .help("Validator config. Enable UDP for tpu transactions."),
-        )
-        .arg(
-            Arg::with_name("tpu_disable_quic")
-                .long("tpu-disable-quic")
-                .help("Validator config. Disable quic for tpu packet forwarding"),
-        )
-        .arg(
             Arg::with_name("limit_ledger_size")
                 .long("limit-ledger-size")
                 .takes_value(true)
+                .default_value(&DEFAULT_MAX_LEDGER_SHREDS.to_string())
                 .help("Validator Config. The `--limit-ledger-size` parameter allows you to specify how many ledger
                 shreds your node retains on disk. If you do not
                 include this parameter, the validator will keep the entire ledger until it runs
@@ -225,7 +216,7 @@ fn parse_matches() -> clap::ArgMatches {
             Arg::with_name("memory_requests")
                 .long("memory-requests")
                 .takes_value(true)
-                .default_value("70Gi") // 70 Gigabytes
+                .default_value("70Gi") // 70 Gibibytes
                 .help("Kubernetes pod config. Specify minimum memory required for deploying validator.
                     Can specify unit here (B, Ki, Mi, Gi, Ti) for bytes, kilobytes, etc (2^N notation)
                     e.g. 1Gi == 1024Mi == 1024Ki == 1,047,576B. [default: 70Gi]"),
@@ -341,29 +332,22 @@ async fn main() {
         ),
     };
 
+    let limit_ledger_size = value_t_or_exit!(matches, "limit_ledger_size", u64);
     let mut validator_config = ValidatorConfig {
-        tpu_enable_udp: matches.is_present("tpu_enable_udp"),
-        tpu_disable_quic: matches.is_present("tpu_disable_quic"),
-        max_ledger_size: if matches.is_present("limit_ledger_size") {
-            let limit_ledger_size = match matches.value_of("limit_ledger_size") {
-                Some(_) => value_t_or_exit!(matches, "limit_ledger_size", u64),
-                None => DEFAULT_MAX_LEDGER_SHREDS,
-            };
-            if limit_ledger_size < DEFAULT_MIN_MAX_LEDGER_SHREDS {
-                error!(
-                    "The provided --limit-ledger-size value was too small, the minimum value is {DEFAULT_MIN_MAX_LEDGER_SHREDS}"
-                );
-                return;
-            }
-            Some(limit_ledger_size)
+        max_ledger_size: if limit_ledger_size < DEFAULT_MIN_MAX_LEDGER_SHREDS {
+            clap::Error::with_description(
+                    format!("The provided --limit-ledger-size value was too small, the minimum value is {DEFAULT_MIN_MAX_LEDGER_SHREDS}"),
+                    clap::ErrorKind::ArgumentNotFound,
+                )
+                .exit();
         } else {
-            None
+            Some(limit_ledger_size)
         },
         skip_poh_verify: matches.is_present("skip_poh_verify"),
         no_snapshot_fetch: matches.is_present("no_snapshot_fetch"),
         require_tower: matches.is_present("require_tower"),
         enable_full_rpc: matches.is_present("enable_full_rpc"),
-        known_validators: None,
+        known_validators: vec![],
     };
 
     let pod_requests = PodRequests::new(
@@ -444,7 +428,7 @@ async fn main() {
         .unwrap_or_default()
         .to_string();
 
-    let mut validator_library = ClusterImages::default();
+    let mut cluster_images = ClusterImages::default();
 
     let bootstrap_validator = Validator::new(DockerImage::new(
         registry_name.clone(),
@@ -452,10 +436,10 @@ async fn main() {
         image_name.clone(),
         image_tag.clone(),
     ));
-    validator_library.set_item(bootstrap_validator, ValidatorType::Bootstrap);
+    cluster_images.set_item(bootstrap_validator, ValidatorType::Bootstrap);
 
     if build_config.docker_build() {
-        for v in validator_library.get_validators() {
+        for v in cluster_images.get_validators() {
             match docker.build_image(solana_root.get_root_path(), v.image()) {
                 Ok(_) => info!("{} image built successfully", v.validator_type()),
                 Err(err) => {
@@ -465,7 +449,7 @@ async fn main() {
             }
         }
 
-        match docker.push_images(validator_library.get_validators()) {
+        match docker.push_images(cluster_images.get_validators()) {
             Ok(_) => info!("Validator images pushed successfully"),
             Err(err) => {
                 error!("Failed to push Validator docker image {err}");
@@ -474,7 +458,7 @@ async fn main() {
         }
     }
 
-    let bootstrap_validator = validator_library.bootstrap().expect("should be bootstrap");
+    let bootstrap_validator = cluster_images.bootstrap().expect("should be bootstrap");
     match kub_controller.create_bootstrap_secret("bootstrap-accounts-secret", &config_directory) {
         Ok(secret) => bootstrap_validator.set_secret(secret),
         Err(err) => {

@@ -58,12 +58,12 @@ pub fn create_selector(key: &str, value: &str) -> BTreeMap<String, String> {
 
 #[allow(clippy::too_many_arguments)]
 pub fn create_replica_set(
-    name: &ValidatorType,
-    namespace: &str,
-    label_selector: &BTreeMap<String, String>,
-    image_name: &DockerImage,
+    name: ValidatorType,
+    namespace: String,
+    label_selector: BTreeMap<String, String>,
+    image_name: DockerImage,
     environment_variables: Vec<EnvVar>,
-    command: &[String],
+    command: Vec<String>,
     volumes: Option<Vec<Volume>>,
     volume_mounts: Option<Vec<VolumeMount>>,
     pod_requests: BTreeMap<String, Quantity>,
@@ -76,11 +76,11 @@ pub fn create_replica_set(
         }),
         spec: Some(PodSpec {
             containers: vec![Container {
-                name: format!("{}-{}", image_name.validator_type(), "container"),
+                name: format!("{}-container", image_name.validator_type()),
                 image: Some(image_name.to_string()),
                 image_pull_policy: Some("Always".to_string()),
                 env: Some(environment_variables),
-                command: Some(command.to_owned()),
+                command: Some(command),
                 volume_mounts,
                 readiness_probe,
                 resources: Some(ResourceRequirements {
@@ -102,7 +102,7 @@ pub fn create_replica_set(
     let replicas_set_spec = ReplicaSetSpec {
         replicas: Some(1),
         selector: LabelSelector {
-            match_labels: Some(label_selector.clone()),
+            match_labels: Some(label_selector),
             ..Default::default()
         },
         template: Some(pod_spec),
@@ -111,8 +111,8 @@ pub fn create_replica_set(
 
     Ok(ReplicaSet {
         metadata: ObjectMeta {
-            name: Some(format!("{}-replicaset", name)),
-            namespace: Some(namespace.to_string()),
+            name: Some(format!("{name}-replicaset")),
+            namespace: Some(namespace),
             ..Default::default()
         },
         spec: Some(replicas_set_spec),
