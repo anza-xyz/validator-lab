@@ -1,19 +1,23 @@
 use {
-    clap::{command, Arg, ArgGroup},
+    clap::{command, value_t_or_exit, Arg, ArgGroup},
     log::*,
+    solana_ledger::blockstore_cleanup_service::{
+        DEFAULT_MAX_LEDGER_SHREDS, DEFAULT_MIN_MAX_LEDGER_SHREDS,
+    },
     solana_sdk::{signature::keypair::read_keypair_file, signer::Signer},
     std::{fs, path::PathBuf},
     strum::VariantNames,
     validator_lab::{
+        cluster_images::ClusterImages,
         docker::{DockerConfig, DockerImage},
         genesis::{
             Genesis, GenesisFlags, DEFAULT_BOOTSTRAP_NODE_SOL, DEFAULT_BOOTSTRAP_NODE_STAKE_SOL,
             DEFAULT_FAUCET_LAMPORTS, DEFAULT_MAX_GENESIS_ARCHIVE_UNPACKED_SIZE,
         },
-        kubernetes::Kubernetes,
-        library::Library,
+        kubernetes::{Kubernetes, PodRequests},
         release::{BuildConfig, BuildType, DeployMethod},
         validator::{LabelType, Validator},
+        validator_config::ValidatorConfig,
         EnvironmentConfig, SolanaRoot, ValidatorType,
     },
 };
@@ -160,6 +164,63 @@ fn parse_matches() -> clap::ArgMatches {
                 .default_value("latest")
                 .help("Docker image tag."),
         )
+        // Bootstrap/Validator Config
+        .arg(
+            Arg::with_name("limit_ledger_size")
+                .long("limit-ledger-size")
+                .takes_value(true)
+                .default_value(&DEFAULT_MAX_LEDGER_SHREDS.to_string())
+                .help("Validator Config. The `--limit-ledger-size` parameter allows you to specify how many ledger
+                shreds your node retains on disk. If you do not
+                include this parameter, the validator will keep the entire ledger until it runs
+                out of disk space. The default value attempts to keep the ledger disk usage
+                under 500GB. More or less disk usage may be requested by adding an argument to
+                `--limit-ledger-size` if desired. Check `agave-validator --help` for the
+                default limit value used by `--limit-ledger-size`. More information about
+                selecting a custom limit value is at : https://github.com/solana-labs/solana/blob/583cec922b6107e0f85c7e14cb5e642bc7dfb340/core/src/ledger_cleanup_service.rs#L15-L26"),
+        )
+        .arg(
+            Arg::with_name("skip_poh_verify")
+                .long("skip-poh-verify")
+                .help("Validator config. If set, validators will skip verifying
+                the ledger they already have saved to disk at
+                boot (results in a much faster boot)"),
+        )
+        .arg(
+            Arg::with_name("no_snapshot_fetch")
+                .long("no-snapshot-fetch")
+                .help("Validator config. If set, disables booting validators from a snapshot"),
+        )
+        .arg(
+            Arg::with_name("require_tower")
+                .long("require-tower")
+                .help("Validator config. Refuse to start if saved tower state is not found.
+                Off by default since validator won't restart if the pod restarts"),
+        )
+        .arg(
+            Arg::with_name("enable_full_rpc")
+                .long("full-rpc")
+                .help("Validator config. Support full RPC services on all nodes"),
+        )
+        // kubernetes config
+        .arg(
+            Arg::with_name("cpu_requests")
+                .long("cpu-requests")
+                .takes_value(true)
+                .default_value("20") // 20 cores
+                .help("Kubernetes pod config. Specify minimum CPUs required for deploying validator.
+                    can use millicore notation as well. e.g. 500m (500 millicores) == 0.5 and is equivalent to half a core.
+                    [default: 20]"),
+        )
+        .arg(
+            Arg::with_name("memory_requests")
+                .long("memory-requests")
+                .takes_value(true)
+                .default_value("70Gi") // 70 Gibibytes
+                .help("Kubernetes pod config. Specify minimum memory required for deploying validator.
+                    Can specify unit here (B, Ki, Mi, Gi, Ti) for bytes, kilobytes, etc (2^N notation)
+                    e.g. 1Gi == 1024Mi == 1024Ki == 1,047,576B. [default: 70Gi]"),
+        )
         .get_matches()
 }
 
@@ -212,22 +273,6 @@ async fn main() {
             "Build directory not found: {}",
             solana_root.get_root_path().display()
         );
-    }
-
-    let kub_controller = Kubernetes::new(environment_config.namespace).await;
-    match kub_controller.namespace_exists().await {
-        Ok(true) => (),
-        Ok(false) => {
-            error!(
-                "Namespace: '{}' doesn't exist. Exiting...",
-                environment_config.namespace
-            );
-            return;
-        }
-        Err(err) => {
-            error!("Error: {err}");
-            return;
-        }
     }
 
     let build_config = BuildConfig::new(
@@ -287,6 +332,50 @@ async fn main() {
         ),
     };
 
+    let limit_ledger_size = value_t_or_exit!(matches, "limit_ledger_size", u64);
+    let mut validator_config = ValidatorConfig {
+        max_ledger_size: if limit_ledger_size < DEFAULT_MIN_MAX_LEDGER_SHREDS {
+            clap::Error::with_description(
+                    format!("The provided --limit-ledger-size value was too small, the minimum value is {DEFAULT_MIN_MAX_LEDGER_SHREDS}"),
+                    clap::ErrorKind::ArgumentNotFound,
+                )
+                .exit();
+        } else {
+            Some(limit_ledger_size)
+        },
+        skip_poh_verify: matches.is_present("skip_poh_verify"),
+        no_snapshot_fetch: matches.is_present("no_snapshot_fetch"),
+        require_tower: matches.is_present("require_tower"),
+        enable_full_rpc: matches.is_present("enable_full_rpc"),
+        known_validators: vec![],
+    };
+
+    let pod_requests = PodRequests::new(
+        matches.value_of("cpu_requests").unwrap().to_string(),
+        matches.value_of("memory_requests").unwrap().to_string(),
+    );
+
+    let mut kub_controller = Kubernetes::new(
+        environment_config.namespace,
+        &mut validator_config,
+        pod_requests,
+    )
+    .await;
+    match kub_controller.namespace_exists().await {
+        Ok(true) => (),
+        Ok(false) => {
+            error!(
+                "Namespace: '{}' doesn't exist. Exiting...",
+                environment_config.namespace
+            );
+            return;
+        }
+        Err(err) => {
+            error!("Error: {err}");
+            return;
+        }
+    }
+
     match build_config.prepare().await {
         Ok(_) => info!("Validator setup prepared successfully"),
         Err(err) => {
@@ -339,7 +428,7 @@ async fn main() {
         .unwrap_or_default()
         .to_string();
 
-    let mut validator_library = Library::default();
+    let mut cluster_images = ClusterImages::default();
 
     let bootstrap_validator = Validator::new(DockerImage::new(
         registry_name.clone(),
@@ -347,10 +436,10 @@ async fn main() {
         image_name.clone(),
         image_tag.clone(),
     ));
-    validator_library.set_item(bootstrap_validator, ValidatorType::Bootstrap);
+    cluster_images.set_item(bootstrap_validator, ValidatorType::Bootstrap);
 
     if build_config.docker_build() {
-        for v in validator_library.get_validators() {
+        for v in cluster_images.get_validators() {
             match docker.build_image(solana_root.get_root_path(), v.image()) {
                 Ok(_) => info!("{} image built successfully", v.validator_type()),
                 Err(err) => {
@@ -360,7 +449,7 @@ async fn main() {
             }
         }
 
-        match docker.push_images(validator_library.get_validators()) {
+        match docker.push_images(cluster_images.get_validators()) {
             Ok(_) => info!("Validator images pushed successfully"),
             Err(err) => {
                 error!("Failed to push Validator docker image {err}");
@@ -369,7 +458,7 @@ async fn main() {
         }
     }
 
-    let bootstrap_validator = validator_library.bootstrap().expect("should be bootstrap");
+    let bootstrap_validator = cluster_images.bootstrap().expect("should be bootstrap");
     match kub_controller.create_bootstrap_secret("bootstrap-accounts-secret", &config_directory) {
         Ok(secret) => bootstrap_validator.set_secret(secret),
         Err(err) => {
@@ -389,12 +478,12 @@ async fn main() {
         }
     }
 
-    // Create bootstrap labels
+    // Create Bootstrap labels
+    // Bootstrap needs two labels, one for each service.
+    // One for Load Balancer, one direct
     let identity_path = config_directory.join("bootstrap-validator/identity.json");
     let bootstrap_keypair =
         read_keypair_file(identity_path).expect("Failed to read bootstrap keypair file");
-    // Bootstrap needs two labels. It will have two services.
-    // One for Load Balancer, one direct
     bootstrap_validator.add_label(
         "load-balancer/name",
         "load-balancer-selector",
@@ -411,4 +500,17 @@ async fn main() {
         bootstrap_keypair.pubkey().to_string(),
         LabelType::Info,
     );
+
+    // create bootstrap replica set
+    match kub_controller.create_bootstrap_validator_replica_set(
+        bootstrap_validator.image(),
+        bootstrap_validator.secret().metadata.name.clone(),
+        bootstrap_validator.replica_set_labels(),
+    ) {
+        Ok(replica_set) => bootstrap_validator.set_replica_set(replica_set),
+        Err(err) => {
+            error!("Error creating bootstrap validator replicas_set: {err}");
+            return;
+        }
+    };
 }

@@ -5,8 +5,6 @@ use {
     log::*,
     reqwest::Client,
     std::{
-        error::Error,
-        fmt::{self, Display, Formatter},
         fs::File,
         io::{BufReader, Cursor, Read, Write},
         path::{Path, PathBuf},
@@ -58,41 +56,15 @@ pub enum ValidatorType {
     Client,
 }
 
-#[derive(Debug)]
-struct DockerPushThreadError {
-    message: String,
-}
-
-impl Display for DockerPushThreadError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.message)
-    }
-}
-
-impl Error for DockerPushThreadError {}
-
-impl From<String> for DockerPushThreadError {
-    fn from(message: String) -> Self {
-        DockerPushThreadError { message }
-    }
-}
-
-impl From<&str> for DockerPushThreadError {
-    fn from(message: &str) -> Self {
-        DockerPushThreadError {
-            message: message.to_string(),
-        }
-    }
-}
-
+pub mod cluster_images;
 pub mod docker;
 pub mod genesis;
 pub mod k8s_helpers;
 pub mod kubernetes;
-pub mod library;
 pub mod release;
 pub mod startup_scripts;
 pub mod validator;
+pub mod validator_config;
 
 static BUILD: Emoji = Emoji("👷 ", "");
 static PACKAGE: Emoji = Emoji("📦 ", "");
@@ -177,18 +149,19 @@ async fn fetch_program(
     version: &str,
     solana_root_path: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let so_filename = format!("spl_{}-{}.so", name.replace('-', "_"), version);
-    let so_path = solana_root_path.join(&so_filename);
-    let so_name = format!("spl_{}.so", name.replace('-', "_"));
+    let name_with_underscores = name.replace('-', "_");
+    let so_filename = format!("spl_{name_with_underscores}-{version}.so");
+    let download_path = solana_root_path.join(&so_filename);
+    let so_name = format!("spl_{name_with_underscores}.so");
 
-    if !so_path.exists() {
-        info!("Downloading {} {}", name, version);
+    if !download_path.exists() {
+        info!("Downloading {name} {version}");
         let url = format!(
             "https://github.com/solana-labs/solana-program-library/releases/download/{}-v{}/{}",
             name, version, so_name
         );
 
-        download_to_temp(&url, &so_path)
+        download_to_temp(&url, &download_path)
             .await
             .map_err(|err| format!("Unable to download {url}. Error: {err}"))?;
     }
@@ -208,7 +181,7 @@ pub async fn fetch_spl(solana_root_path: &Path) -> Result<(), Box<dyn std::error
         },
         GenesisProgram {
             name: "token-2022",
-            version: "0.9.0",
+            version: "1.0.0",
             address: "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
             loader: UPGRADEABLE_LOADER,
         },

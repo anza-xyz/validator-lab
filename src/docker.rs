@@ -1,16 +1,15 @@
 use {
     crate::{
         new_spinner_progress_bar, release::DeployMethod, startup_scripts::StartupScripts,
-        validator::Validator, DockerPushThreadError, ValidatorType, BUILD, ROCKET,
+        validator::Validator, ValidatorType, BUILD, ROCKET,
     },
     log::*,
-    rayon::prelude::*,
     std::{
         error::Error,
         fmt::{self, Display, Formatter},
         fs,
         path::{Path, PathBuf},
-        process::{Command, Stdio},
+        process::{Child, Command, Stdio},
     },
 };
 
@@ -198,40 +197,38 @@ WORKDIR /home/solana
         Ok(())
     }
 
-    pub fn push_image(docker_image: &DockerImage) -> Result<(), Box<dyn Error + Send>> {
-        let progress_bar = new_spinner_progress_bar();
-        progress_bar.set_message(format!(
-            "{ROCKET}Pushing {docker_image} image to registry...",
-        ));
+    pub fn push_image(docker_image: &DockerImage) -> Result<Child, Box<dyn Error>> {
         let command = format!("docker push '{docker_image}'");
-        let output = Command::new("sh")
+        let child = Command::new("sh")
             .arg("-c")
             .arg(&command)
             .stdout(Stdio::null())
             .stderr(Stdio::null())
-            .spawn()
-            .expect("Failed to execute command")
-            .wait_with_output()
-            .expect("Failed to push image");
+            .spawn()?;
 
-        if !output.status.success() {
-            return Err(Box::new(DockerPushThreadError::from(
-                output.status.to_string(),
-            )));
-        }
-        progress_bar.finish_and_clear();
-        Ok(())
+        Ok(child)
     }
 
-    pub fn push_images<'a, I>(&self, validators: I) -> Result<(), Box<dyn Error + Send>>
+    pub fn push_images<'a, I>(&self, validators: I) -> Result<(), Box<dyn Error>>
     where
         I: IntoIterator<Item = &'a Validator>,
     {
         info!("Pushing images...");
-        validators
+        let children: Result<Vec<Child>, _> = validators
             .into_iter()
-            .collect::<Vec<_>>() // Collect into Vec and thread push
-            .par_iter()
-            .try_for_each(|validator| Self::push_image(validator.image()))
+            .map(|validator| Self::push_image(validator.image()))
+            .collect();
+
+        let progress_bar = new_spinner_progress_bar();
+        progress_bar.set_message(format!("{ROCKET}Pushing images to registry..."));
+        for child in children? {
+            let output = child.wait_with_output()?;
+            if !output.status.success() {
+                return Err(output.status.to_string().into());
+            }
+        }
+        progress_bar.finish_and_clear();
+
+        Ok(())
     }
 }
