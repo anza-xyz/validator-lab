@@ -18,8 +18,7 @@ use {
         release::{BuildConfig, BuildType, DeployMethod},
         validator::{LabelType, Validator},
         validator_config::ValidatorConfig,
-        EnvironmentConfig, ValidatorType,
-        Metrics, SolanaRoot,
+        EnvironmentConfig, Metrics, SolanaRoot, ValidatorType,
     },
 };
 
@@ -579,20 +578,20 @@ async fn main() {
 
     // deploy bootstrap replica set
     match kub_controller
-            .deploy_replicas_set(bootstrap_validator.replica_set())
-            .await
-        {
-            Ok(_) => {
-                info!(
-                    "{} deployed successfully",
-                    bootstrap_validator.replica_set_name()
-                );
-            }
-            Err(err) => {
-                error!("Error! Failed to deploy bootstrap validator replicas_set. err: {err}");
-                return;
-            }
-        };
+        .deploy_replicas_set(bootstrap_validator.replica_set())
+        .await
+    {
+        Ok(_) => {
+            info!(
+                "{} deployed successfully",
+                bootstrap_validator.replica_set_name()
+            );
+        }
+        Err(err) => {
+            error!("Error! Failed to deploy bootstrap validator replicas_set. err: {err}");
+            return;
+        }
+    };
 
     // create and deploy bootstrap-service
     let bootstrap_service = kub_controller.create_bootstrap_service(
@@ -609,10 +608,8 @@ async fn main() {
     let load_balancer_label =
         kub_controller.create_selector("load-balancer/name", "load-balancer-selector");
     //create load balancer
-    let load_balancer = kub_controller.create_validator_load_balancer(
-        "bootstrap-and-rpc-node-lb-service",
-        &load_balancer_label,
-    );
+    let load_balancer = kub_controller
+        .create_validator_load_balancer("bootstrap-and-rpc-node-lb-service", &load_balancer_label);
 
     //deploy load balancer
     match kub_controller.deploy_service(&load_balancer).await {

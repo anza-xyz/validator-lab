@@ -3,7 +3,7 @@ use {
         docker::DockerImage,
         k8s_helpers::{self, SecretType},
         validator_config::ValidatorConfig,
-        ValidatorType, Metrics,
+        Metrics, ValidatorType,
     },
     k8s_openapi::{
         api::{
@@ -14,7 +14,6 @@ use {
             },
         },
         apimachinery::pkg::api::resource::Quantity,
-        ByteString,
     },
     kube::{
         api::{Api, ListParams, PostParams},
@@ -217,7 +216,7 @@ impl<'a> Kubernetes<'a> {
     pub fn create_selector(&self, key: &str, value: &str) -> BTreeMap<String, String> {
         k8s_helpers::create_selector(key, value)
     }
-    
+
     pub async fn deploy_replicas_set(
         &self,
         replica_set: &ReplicaSet,
@@ -234,7 +233,12 @@ impl<'a> Kubernetes<'a> {
         service_name: &str,
         label_selector: &BTreeMap<String, String>,
     ) -> Service {
-        k8s_helpers::create_service(service_name.to_string(), self.namespace.clone(), label_selector.clone(), false)
+        k8s_helpers::create_service(
+            service_name.to_string(),
+            self.namespace.clone(),
+            label_selector.clone(),
+            false,
+        )
     }
 
     pub async fn deploy_service(&self, service: &Service) -> Result<Service, kube::Error> {
@@ -252,9 +256,14 @@ impl<'a> Kubernetes<'a> {
         service_name: &str,
         label_selector: &BTreeMap<String, String>,
     ) -> Service {
-        k8s_helpers::create_service(service_name.to_string(), self.namespace.clone(), label_selector.clone(), true)
+        k8s_helpers::create_service(
+            service_name.to_string(),
+            self.namespace.clone(),
+            label_selector.clone(),
+            true,
+        )
     }
-    
+
     pub async fn check_replica_set_ready(
         &self,
         replica_set_name: &str,
@@ -279,7 +288,9 @@ impl<'a> Kubernetes<'a> {
         if let Some(metrics) = &self.metrics {
             data.insert(
                 "SOLANA_METRICS_CONFIG".to_string(),
-                SecretType::Value { v: metrics.to_env_string() },
+                SecretType::Value {
+                    v: metrics.to_env_string(),
+                },
             );
         } else {
             return Err(

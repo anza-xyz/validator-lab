@@ -2,8 +2,23 @@
 set -e
 
 here=$(dirname "$0")
-# shellcheck source=net/common.sh
-source "$here"/common.sh
+
+# https://gist.github.com/cdown/1163649
+urlencode() {
+  declare s="$1"
+  declare l=$((${#s} - 1))
+  for i in $(seq 0 $l); do
+    declare c="${s:$i:1}"
+    case $c in
+      [a-zA-Z0-9.~_-])
+        echo -n "$c"
+        ;;
+      *)
+        printf '%%%02X' "'$c"
+        ;;
+    esac
+  done
+}
 
 usage() {
   exitcode=0
