@@ -490,6 +490,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let identity_path = config_directory.join("bootstrap-validator/identity.json");
     let bootstrap_keypair =
         read_keypair_file(identity_path).expect("Failed to read bootstrap keypair file");
+    kub_controller.add_known_validator(bootstrap_keypair.pubkey());
+
     bootstrap_validator.add_label(
         "load-balancer/name",
         "load-balancer-selector",

@@ -20,7 +20,7 @@ use {
         Client,
     },
     log::*,
-    solana_sdk::{pubkey::Pubkey, signature::keypair::read_keypair_file, signer::Signer},
+    solana_sdk::pubkey::Pubkey,
     std::{collections::BTreeMap, error::Error, path::Path},
 };
 
@@ -86,10 +86,6 @@ impl<'a> Kubernetes<'a> {
         let vote_key_path = config_dir.join("bootstrap-validator/vote-account.json");
         let stake_key_path = config_dir.join("bootstrap-validator/stake-account.json");
 
-        let bootstrap_keypair = read_keypair_file(&identity_key_path)
-            .expect("Failed to read bootstrap validator keypair file");
-        self.add_known_validator(bootstrap_keypair.pubkey());
-
         let mut secrets = BTreeMap::new();
         secrets.insert(
             "faucet".to_string(),
@@ -119,7 +115,7 @@ impl<'a> Kubernetes<'a> {
         k8s_helpers::create_secret(secret_name.to_string(), secrets)
     }
 
-    fn add_known_validator(&mut self, pubkey: Pubkey) {
+    pub fn add_known_validator(&mut self, pubkey: Pubkey) {
         self.validator_config.known_validators.push(pubkey);
         info!("pubkey added to known validators: {:?}", pubkey);
     }
