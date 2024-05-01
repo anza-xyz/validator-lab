@@ -264,10 +264,7 @@ impl<'a> Kubernetes<'a> {
         )
     }
 
-    pub async fn check_replica_set_ready(
-        &self,
-        replica_set_name: &str,
-    ) -> Result<bool, kube::Error> {
+    pub async fn is_replica_set_ready(&self, replica_set_name: &str) -> Result<bool, kube::Error> {
         let replica_sets: Api<ReplicaSet> =
             Api::namespaced(self.k8s_client.clone(), self.namespace.as_str());
         let replica_set = replica_sets.get(replica_set_name).await?;
@@ -283,7 +280,7 @@ impl<'a> Kubernetes<'a> {
         Ok(available_validators >= desired_validators)
     }
 
-    pub fn create_metrics_secret(&self) -> Result<Secret, Box<dyn Error>> {
+    pub fn create_metrics_secret(&self) -> Result<Secret, Box<dyn std::error::Error>> {
         let mut data = BTreeMap::new();
         if let Some(metrics) = &self.metrics {
             data.insert(
