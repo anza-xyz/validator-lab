@@ -61,8 +61,7 @@ cargo run --bin cluster --
 ## Metrics
 1) Setup metrics database:
 ```
-cd scripts/
-./init-metrics -c <database-name> <metrics-username>
+./init-metrics -c <database-name> -u <metrics-username>
 # enter password when prompted
 ```
 2) add the following to your `cluster` command from above
