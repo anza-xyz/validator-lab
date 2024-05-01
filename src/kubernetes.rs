@@ -3,14 +3,14 @@ use {
         docker::DockerImage,
         k8s_helpers::{self, SecretType},
         validator_config::ValidatorConfig,
-        ValidatorType,
+        Metrics, ValidatorType,
     },
     k8s_openapi::{
         api::{
             apps::v1::ReplicaSet,
             core::v1::{
-                EnvVar, EnvVarSource, Namespace, ObjectFieldSelector, Secret, SecretVolumeSource,
-                Volume, VolumeMount,
+                EnvVar, EnvVarSource, Namespace, ObjectFieldSelector, Secret, SecretKeySelector,
+                SecretVolumeSource, Service, Volume, VolumeMount,
             },
         },
         apimachinery::pkg::api::resource::Quantity,
@@ -45,6 +45,7 @@ pub struct Kubernetes<'a> {
     namespace: String,
     validator_config: &'a mut ValidatorConfig,
     pod_requests: PodRequests,
+    pub metrics: Option<Metrics>,
 }
 
 impl<'a> Kubernetes<'a> {
@@ -52,12 +53,14 @@ impl<'a> Kubernetes<'a> {
         namespace: &str,
         validator_config: &'a mut ValidatorConfig,
         pod_requests: PodRequests,
+        metrics: Option<Metrics>,
     ) -> Kubernetes<'a> {
         Self {
             k8s_client: Client::try_default().await.unwrap(),
             namespace: namespace.to_owned(),
             validator_config,
             pod_requests,
+            metrics,
         }
     }
 
@@ -113,7 +116,7 @@ impl<'a> Kubernetes<'a> {
             },
         );
 
-        k8s_helpers::create_secret(secret_name, secrets)
+        k8s_helpers::create_secret(secret_name.to_string(), secrets)
     }
 
     fn add_known_validator(&mut self, pubkey: Pubkey) {
@@ -133,7 +136,7 @@ impl<'a> Kubernetes<'a> {
         secret_name: Option<String>,
         label_selector: &BTreeMap<String, String>,
     ) -> Result<ReplicaSet, Box<dyn Error>> {
-        let env_vars = vec![EnvVar {
+        let mut env_vars = vec![EnvVar {
             name: "MY_POD_IP".to_string(),
             value_from: Some(EnvVarSource {
                 field_ref: Some(ObjectFieldSelector {
@@ -144,6 +147,10 @@ impl<'a> Kubernetes<'a> {
             }),
             ..Default::default()
         }];
+
+        if self.metrics.is_some() {
+            env_vars.push(self.get_metrics_env_var_secret())
+        }
 
         let accounts_volume = Some(vec![Volume {
             name: "bootstrap-accounts-volume".into(),
@@ -208,5 +215,106 @@ impl<'a> Kubernetes<'a> {
 
     pub fn create_selector(&self, key: &str, value: &str) -> BTreeMap<String, String> {
         k8s_helpers::create_selector(key, value)
+    }
+
+    pub async fn deploy_replicas_set(
+        &self,
+        replica_set: &ReplicaSet,
+    ) -> Result<ReplicaSet, kube::Error> {
+        let api: Api<ReplicaSet> =
+            Api::namespaced(self.k8s_client.clone(), self.namespace.as_str());
+        let post_params = PostParams::default();
+        // Apply the ReplicaSet
+        api.create(&post_params, replica_set).await
+    }
+
+    pub fn create_bootstrap_service(
+        &self,
+        service_name: &str,
+        label_selector: &BTreeMap<String, String>,
+    ) -> Service {
+        k8s_helpers::create_service(
+            service_name.to_string(),
+            self.namespace.clone(),
+            label_selector.clone(),
+            false,
+        )
+    }
+
+    pub async fn deploy_service(&self, service: &Service) -> Result<Service, kube::Error> {
+        let post_params = PostParams::default();
+        // Create an API instance for Services in the specified namespace
+        let service_api: Api<Service> =
+            Api::namespaced(self.k8s_client.clone(), self.namespace.as_str());
+
+        // Create the Service object in the cluster
+        service_api.create(&post_params, service).await
+    }
+
+    pub fn create_validator_load_balancer(
+        &self,
+        service_name: &str,
+        label_selector: &BTreeMap<String, String>,
+    ) -> Service {
+        k8s_helpers::create_service(
+            service_name.to_string(),
+            self.namespace.clone(),
+            label_selector.clone(),
+            true,
+        )
+    }
+
+    pub async fn check_replica_set_ready(
+        &self,
+        replica_set_name: &str,
+    ) -> Result<bool, kube::Error> {
+        let replica_sets: Api<ReplicaSet> =
+            Api::namespaced(self.k8s_client.clone(), self.namespace.as_str());
+        let replica_set = replica_sets.get(replica_set_name).await?;
+
+        let desired_validators = replica_set.spec.as_ref().unwrap().replicas.unwrap_or(1);
+        let available_validators = replica_set
+            .status
+            .as_ref()
+            .unwrap()
+            .available_replicas
+            .unwrap_or(0);
+
+        Ok(available_validators >= desired_validators)
+    }
+
+    pub fn create_metrics_secret(&self) -> Result<Secret, Box<dyn Error>> {
+        let mut data = BTreeMap::new();
+        if let Some(metrics) = &self.metrics {
+            data.insert(
+                "SOLANA_METRICS_CONFIG".to_string(),
+                SecretType::Value {
+                    v: metrics.to_env_string(),
+                },
+            );
+        } else {
+            return Err(
+                "Called create_metrics_secret() but metrics were not provided."
+                    .to_string()
+                    .into(),
+            );
+        }
+
+        k8s_helpers::create_secret("solana-metrics-secret".to_string(), data)
+    }
+
+    pub fn get_metrics_env_var_secret(&self) -> EnvVar {
+        EnvVar {
+            name: "SOLANA_METRICS_CONFIG".to_string(),
+            value_from: Some(EnvVarSource {
+                secret_key_ref: Some(SecretKeySelector {
+                    name: Some("solana-metrics-secret".to_string()),
+                    key: "SOLANA_METRICS_CONFIG".to_string(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }
     }
 }

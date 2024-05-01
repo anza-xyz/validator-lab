@@ -18,7 +18,7 @@ use {
         release::{BuildConfig, BuildType, DeployMethod},
         validator::{LabelType, Validator},
         validator_config::ValidatorConfig,
-        EnvironmentConfig, SolanaRoot, ValidatorType,
+        EnvironmentConfig, Metrics, SolanaRoot, ValidatorType,
     },
 };
 
@@ -221,6 +221,38 @@ fn parse_matches() -> clap::ArgMatches {
                     Can specify unit here (B, Ki, Mi, Gi, Ti) for bytes, kilobytes, etc (2^N notation)
                     e.g. 1Gi == 1024Mi == 1024Ki == 1,047,576B. [default: 70Gi]"),
         )
+        //Metrics Config
+        .arg(
+            Arg::with_name("metrics_host")
+                .long("metrics-host")
+                .takes_value(true)
+                .requires_all(&["metrics_port", "metrics_db", "metrics_username", "metrics_password"])
+                .help("Metrics Config. Optional: specify metrics host. e.g. https://internal-metrics.solana.com"),
+        )
+        .arg(
+            Arg::with_name("metrics_port")
+                .long("metrics-port")
+                .takes_value(true)
+                .help("Metrics Config. Optional: specify metrics port. e.g. 8086"),
+        )
+        .arg(
+            Arg::with_name("metrics_db")
+                .long("metrics-db")
+                .takes_value(true)
+                .help("Metrics Config. Optional: specify metrics database. e.g. k8s-cluster-<your name>"),
+        )
+        .arg(
+            Arg::with_name("metrics_username")
+                .long("metrics-username")
+                .takes_value(true)
+                .help("Metrics Config. Optional: specify metrics username"),
+        )
+        .arg(
+            Arg::with_name("metrics_password")
+                .long("metrics-password")
+                .takes_value(true)
+                .help("Metrics Config. Optional: Specify metrics password"),
+        )
         .get_matches()
 }
 
@@ -355,12 +387,24 @@ async fn main() {
         matches.value_of("memory_requests").unwrap().to_string(),
     );
 
+    let metrics = matches.value_of("metrics_host").map(|host| {
+        Metrics::new(
+            host.to_string(),
+            matches.value_of("metrics_port").unwrap().to_string(),
+            matches.value_of("metrics_db").unwrap().to_string(),
+            matches.value_of("metrics_username").unwrap().to_string(),
+            matches.value_of("metrics_password").unwrap().to_string(),
+        )
+    });
+
     let mut kub_controller = Kubernetes::new(
         environment_config.namespace,
         &mut validator_config,
         pod_requests,
+        metrics,
     )
     .await;
+
     match kub_controller.namespace_exists().await {
         Ok(true) => (),
         Ok(false) => {
@@ -458,6 +502,24 @@ async fn main() {
         }
     }
 
+    // metrics secret create once and use by all pods
+    if kub_controller.metrics.is_some() {
+        let metrics_secret = match kub_controller.create_metrics_secret() {
+            Ok(secret) => secret,
+            Err(err) => {
+                error!("Failed to create metrics secret! {err}");
+                return;
+            }
+        };
+        match kub_controller.deploy_secret(&metrics_secret).await {
+            Ok(_) => (),
+            Err(err) => {
+                error!("{err}");
+                return;
+            }
+        }
+    };
+
     let bootstrap_validator = cluster_images.bootstrap().expect("should be bootstrap");
     match kub_controller.create_bootstrap_secret("bootstrap-accounts-secret", &config_directory) {
         Ok(secret) => bootstrap_validator.set_secret(secret),
@@ -513,4 +575,62 @@ async fn main() {
             return;
         }
     };
+
+    // deploy bootstrap replica set
+    match kub_controller
+        .deploy_replicas_set(bootstrap_validator.replica_set())
+        .await
+    {
+        Ok(_) => {
+            info!(
+                "{} deployed successfully",
+                bootstrap_validator.replica_set_name()
+            );
+        }
+        Err(err) => {
+            error!("Error! Failed to deploy bootstrap validator replicas_set. err: {err}");
+            return;
+        }
+    };
+
+    // create and deploy bootstrap-service
+    let bootstrap_service = kub_controller.create_bootstrap_service(
+        "bootstrap-validator-service",
+        bootstrap_validator.service_labels(),
+    );
+    match kub_controller.deploy_service(&bootstrap_service).await {
+        Ok(_) => info!("bootstrap validator service deployed successfully"),
+        Err(err) => error!("Error! Failed to deploy bootstrap validator service. err: {err}"),
+    }
+
+    //load balancer service. only create one and use for all bootstrap/rpc nodes
+    // service selector matches bootstrap selector
+    let load_balancer_label =
+        kub_controller.create_selector("load-balancer/name", "load-balancer-selector");
+    //create load balancer
+    let load_balancer = kub_controller
+        .create_validator_load_balancer("bootstrap-and-rpc-node-lb-service", &load_balancer_label);
+
+    //deploy load balancer
+    match kub_controller.deploy_service(&load_balancer).await {
+        Ok(_) => info!("load balancer service deployed successfully"),
+        Err(err) => error!("Error! Failed to deploy load balancer service. err: {err}"),
+    }
+
+    // wait for bootstrap replicaset to deploy
+    while {
+        match kub_controller
+            .check_replica_set_ready(bootstrap_validator.replica_set_name().as_str())
+            .await
+        {
+            Ok(ok) => !ok, // Continue the loop if replica set is not ready: Ok(false)
+            Err(_) => panic!("Error occurred while checking replica set readiness"),
+        }
+    } {
+        info!(
+            "replica set: {} not ready...",
+            bootstrap_validator.replica_set_name()
+        );
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    }
 }

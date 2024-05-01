@@ -5,7 +5,8 @@ use {
             apps::v1::{ReplicaSet, ReplicaSetSpec},
             core::v1::{
                 Container, EnvVar, PodSecurityContext, PodSpec, PodTemplateSpec, Probe,
-                ResourceRequirements, Secret, Volume, VolumeMount,
+                ResourceRequirements, Secret, Service, ServicePort, ServiceSpec, Volume,
+                VolumeMount,
             },
         },
         apimachinery::pkg::{api::resource::Quantity, apis::meta::v1::LabelSelector},
@@ -20,10 +21,10 @@ pub enum SecretType {
     File { path: PathBuf },
 }
 
-fn build_secret(name: &str, data: BTreeMap<String, ByteString>) -> Secret {
+fn build_secret(name: String, data: BTreeMap<String, ByteString>) -> Secret {
     Secret {
         metadata: ObjectMeta {
-            name: Some(name.to_string()),
+            name: Some(name),
             ..Default::default()
         },
         data: Some(data),
@@ -32,7 +33,7 @@ fn build_secret(name: &str, data: BTreeMap<String, ByteString>) -> Secret {
 }
 
 pub fn create_secret(
-    secret_name: &str,
+    secret_name: String,
     secrets: BTreeMap<String, SecretType>,
 ) -> Result<Secret, Box<dyn Error>> {
     let data = secrets
@@ -118,4 +119,51 @@ pub fn create_replica_set(
         spec: Some(replicas_set_spec),
         ..Default::default()
     })
+}
+
+pub fn create_service(
+    service_name: String,
+    namespace: String,
+    label_selector: BTreeMap<String, String>,
+    is_load_balancer: bool,
+) -> Service {
+    Service {
+        metadata: ObjectMeta {
+            name: Some(service_name),
+            namespace: Some(namespace),
+            ..Default::default()
+        },
+        spec: Some(ServiceSpec {
+            selector: Some(label_selector),
+            type_: if is_load_balancer {
+                Some("LoadBalancer".to_string())
+            } else {
+                None
+            },
+            cluster_ip: if is_load_balancer {
+                None
+            } else {
+                Some("None".to_string())
+            },
+            ports: Some(vec![
+                ServicePort {
+                    port: 8899, // RPC Port
+                    name: Some("rpc-port".to_string()),
+                    ..Default::default()
+                },
+                ServicePort {
+                    port: 8001, //Gossip Port
+                    name: Some("gossip-port".to_string()),
+                    ..Default::default()
+                },
+                ServicePort {
+                    port: 9900, //Faucet Port
+                    name: Some("faucet-port".to_string()),
+                    ..Default::default()
+                },
+            ]),
+            ..Default::default()
+        }),
+        ..Default::default()
+    }
 }

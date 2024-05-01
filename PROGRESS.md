@@ -29,19 +29,19 @@
     - [ ] RPC nodes
     - [ ] Client
 - [ ] Create & Deploy Replica Set
-    - [ ] Bootstrap
+    - [x] Bootstrap
     - [ ] Validator (regular)
     - [ ] RPC nodes
     - [ ] Client
 - [ ] Create & Deploy Services
-    - [ ] Bootstrap
+    - [x] Bootstrap
     - [ ] Validator (regular)
     - [ ] RPC nodes
     - [ ] Client
-- [ ] Check Bootstrap is deployed and running
-- [ ] Build and deploy Load Balancer (sits in front of bootstrap and RPC nodes)
+- [x] Check Bootstrap is deployed and running
+- [x] Build and deploy Load Balancer (sits in front of bootstrap and RPC nodes)
 - [ ] Add metrics
-    - [ ] Bootstrap
+    - [x] Bootstrap
     - [ ] Validator (regular)
     - [ ] RPC nodes
     - [ ] Client
@@ -69,7 +69,7 @@ Above, we start with bootstrap, and then we do validators (regular), and then we
     - Use command line flags to set type of client, tx-count, etc
 
 - [ ] Add in kubernetes deployment flags
-    - [ ] CPU/Memory Requests
+    - [x] CPU/Memory Requests
     - [ ] Node Affinity -> Regions
     - [ ] Node Affinity -> Node Type (Equinix/Lumen)
 

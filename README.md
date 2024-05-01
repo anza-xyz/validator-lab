@@ -60,3 +60,51 @@ cargo run --bin cluster --
     --base-image <base-image>           # e.g. ubuntu:20.04
     --image-name <docker-image-name>    # e.g. cluster-image
 ```
+
+## Metrics
+1) Setup metrics database:
+```
+cd scripts/
+./init-metrics -c <database-name> <metrics-username>
+# enter password when promted
+```
+2) add the following to your `cluster` command from above
+```
+--metrics-host https://internal-metrics.solana.com # need the `https://` here
+--metrics-port 8086
+--metrics-db <database-name>            # from (1)
+--metrics-username <metrics-username>   # from (1)
+--metrics-password <metrics-password>   # from (1)
+```
+
+
+## Kubernetes Cheatsheet
+Create namespace:
+```
+kubectl create ns <namespace>
+```
+
+Delete namespace:
+```
+kubectl delete ns <namespace>
+```
+
+Get running pods:
+```
+kubectl get pods -n <namespace>
+```
+
+Get pod logs:
+```
+kubectl logs -n <namespace> <pod-name>
+```
+
+Exec into pod:
+```
+kubectl exec -it -n <namespace> <pod-name> -- /bin/bash
+```
+
+Get information about pod:
+```
+kubectl describe pod -n <namespace> <pod-name>
+```
