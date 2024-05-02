@@ -12,7 +12,8 @@ use {
         docker::{DockerConfig, DockerImage},
         genesis::{
             Genesis, GenesisFlags, DEFAULT_BOOTSTRAP_NODE_SOL, DEFAULT_BOOTSTRAP_NODE_STAKE_SOL,
-            DEFAULT_FAUCET_LAMPORTS, DEFAULT_MAX_GENESIS_ARCHIVE_UNPACKED_SIZE,
+            DEFAULT_FAUCET_LAMPORTS, DEFAULT_INTERNAL_NODE_SOL, DEFAULT_INTERNAL_NODE_STAKE_SOL,
+            DEFAULT_MAX_GENESIS_ARCHIVE_UNPACKED_SIZE,
         },
         kubernetes::{Kubernetes, PodRequests},
         release::{BuildConfig, BuildType, DeployMethod},
@@ -214,6 +215,20 @@ fn parse_matches() -> clap::ArgMatches {
                 .long("full-rpc")
                 .help("Validator config. Support full RPC services on all nodes"),
         )
+        .arg(
+            Arg::with_name("internal_node_sol")
+                .long("internal-node-sol")
+                .takes_value(true)
+                .default_value(&DEFAULT_INTERNAL_NODE_SOL.to_string())
+                .help("Amount to fund internal nodes in genesis config."),
+        )
+        .arg(
+            Arg::with_name("internal_node_stake_sol")
+                .long("internal-node-stake-sol")
+                .takes_value(true)
+                .default_value(&DEFAULT_INTERNAL_NODE_STAKE_SOL.to_string())
+                .help("Amount to stake internal nodes (Sol)."),
+        )
         // kubernetes config
         .arg(
             Arg::with_name("cpu_requests")
@@ -382,6 +397,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let limit_ledger_size = value_t_or_exit!(matches, "limit_ledger_size", u64);
     let mut validator_config = ValidatorConfig {
+        internal_node_sol: value_t_or_exit!(matches, "internal_node_sol", f64),
+        internal_node_stake_sol: value_t_or_exit!(matches, "internal_node_stake_sol", f64),
+        shred_version: None, // set after genesis created
         max_ledger_size: if limit_ledger_size < DEFAULT_MIN_MAX_LEDGER_SHREDS {
             clap::Error::with_description(
                     format!("The provided --limit-ledger-size value was too small, the minimum value is {DEFAULT_MIN_MAX_LEDGER_SHREDS}"),
@@ -623,6 +641,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             validator_keypair.pubkey().to_string(),
             LabelType::Info,
         );
+
+        let replica_set = kub_controller.create_validator_replica_set(
+            validator.image(),
+            validator.secret().metadata.name.clone(),
+            validator.replica_set_labels(),
+            validator_index,
+        )?;
+        validator.set_replica_set(replica_set);
     }
 
     Ok(())

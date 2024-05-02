@@ -1,12 +1,12 @@
 use {
-    crate::{docker::DockerImage, ValidatorType},
+    crate::docker::DockerImage,
     k8s_openapi::{
         api::{
             apps::v1::{ReplicaSet, ReplicaSetSpec},
             core::v1::{
-                Container, EnvVar, PodSecurityContext, PodSpec, PodTemplateSpec, Probe,
-                ResourceRequirements, Secret, Service, ServicePort, ServiceSpec, Volume,
-                VolumeMount,
+                Container, EnvVar, EnvVarSource, ObjectFieldSelector, PodSecurityContext, PodSpec,
+                PodTemplateSpec, Probe, ResourceRequirements, Secret, Service, ServicePort,
+                ServiceSpec, Volume, VolumeMount,
             },
         },
         apimachinery::pkg::{api::resource::Quantity, apis::meta::v1::LabelSelector},
@@ -59,7 +59,7 @@ pub fn create_selector(key: &str, value: &str) -> BTreeMap<String, String> {
 
 #[allow(clippy::too_many_arguments)]
 pub fn create_replica_set(
-    name: ValidatorType,
+    name: String,
     namespace: String,
     label_selector: BTreeMap<String, String>,
     image_name: DockerImage,
@@ -165,5 +165,30 @@ pub fn create_service(
             ..Default::default()
         }),
         ..Default::default()
+    }
+}
+
+pub fn create_environment_variable(
+    name: String,
+    value: Option<String>,
+    field_path: Option<String>,
+) -> EnvVar {
+    match field_path {
+        Some(path) => EnvVar {
+            name,
+            value_from: Some(EnvVarSource {
+                field_ref: Some(ObjectFieldSelector {
+                    field_path: path,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+        None => EnvVar {
+            name,
+            value,
+            ..Default::default()
+        },
     }
 }

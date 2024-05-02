@@ -26,7 +26,6 @@ kubectl create ns <namespace>
 ```
 cargo run --bin cluster --
     -n <namespace>
-    --num_validators <number-of-non-bootstrap-voting-validators>
     --local-path <path-to-local-agave-monorepo>
 ```
 
@@ -34,11 +33,10 @@ cargo run --bin cluster --
 ```
 cargo run --bin cluster --
     -n <namespace>
-    --num_validators <number-of-non-bootstrap-voting-validators>
     --release-channel <agave-version: e.g. v1.17.28> # note: MUST include the "v"
 ```
 
-#### Build from Local Repo and Configure Genesis and Bootstrap Validator Image
+#### Build from Local Repo and Configure Genesis and Bootstrap and Validator Image
 Example:
 ```
 cargo run --bin cluster -- 
@@ -59,6 +57,13 @@ cargo run --bin cluster --
     --tag <docker-image-tag>            # e.g. v1
     --base-image <base-image>           # e.g. ubuntu:20.04
     --image-name <docker-image-name>    # e.g. cluster-image
+    # validator config
+    --full-rpc
+    --internal-node-sol <Sol>
+    --internal-node-stake-sol <Sol>
+    # kubernetes config
+    --cpu-requests <cores>
+    --memory-requests <memory>
 ```
 
 ## Metrics

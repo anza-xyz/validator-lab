@@ -198,7 +198,7 @@ impl<'a> Kubernetes<'a> {
         command.extend(self.generate_bootstrap_command_flags());
 
         k8s_helpers::create_replica_set(
-            ValidatorType::Bootstrap,
+            ValidatorType::Bootstrap.to_string(),
             self.namespace.clone(),
             label_selector.clone(),
             image_name.clone(),
@@ -339,5 +339,132 @@ impl<'a> Kubernetes<'a> {
             }),
             ..Default::default()
         }
+    }
+
+    fn set_non_bootstrap_environment_variables(&self) -> Vec<EnvVar> {
+        vec![
+            k8s_helpers::create_environment_variable(
+                "NAMESPACE".to_string(),
+                None,
+                Some("metadata.namespace".to_string()),
+            ),
+            k8s_helpers::create_environment_variable(
+                "BOOTSTRAP_RPC_ADDRESS".to_string(),
+                Some("bootstrap-validator-service.$(NAMESPACE).svc.cluster.local:8899".to_string()),
+                None,
+            ),
+            k8s_helpers::create_environment_variable(
+                "BOOTSTRAP_GOSSIP_ADDRESS".to_string(),
+                Some("bootstrap-validator-service.$(NAMESPACE).svc.cluster.local:8001".to_string()),
+                None,
+            ),
+            k8s_helpers::create_environment_variable(
+                "BOOTSTRAP_FAUCET_ADDRESS".to_string(),
+                Some("bootstrap-validator-service.$(NAMESPACE).svc.cluster.local:9900".to_string()),
+                None,
+            ),
+        ]
+    }
+
+    fn set_load_balancer_environment_variables(&self) -> Vec<EnvVar> {
+        vec![
+            k8s_helpers::create_environment_variable(
+                "LOAD_BALANCER_RPC_ADDRESS".to_string(),
+                Some(
+                    "bootstrap-and-non-voting-lb-service.$(NAMESPACE).svc.cluster.local:8899"
+                        .to_string(),
+                ),
+                None,
+            ),
+            k8s_helpers::create_environment_variable(
+                "LOAD_BALANCER_GOSSIP_ADDRESS".to_string(),
+                Some(
+                    "bootstrap-and-non-voting-lb-service.$(NAMESPACE).svc.cluster.local:8001"
+                        .to_string(),
+                ),
+                None,
+            ),
+            k8s_helpers::create_environment_variable(
+                "LOAD_BALANCER_FAUCET_ADDRESS".to_string(),
+                Some(
+                    "bootstrap-and-non-voting-lb-service.$(NAMESPACE).svc.cluster.local:9900"
+                        .to_string(),
+                ),
+                None,
+            ),
+        ]
+    }
+
+    fn add_known_validators_if_exists(&self, flags: &mut Vec<String>) {
+        for key in self.validator_config.known_validators.iter() {
+            flags.push("--known-validator".to_string());
+            flags.push(key.to_string());
+        }
+    }
+
+    fn generate_validator_command_flags(&self) -> Vec<String> {
+        let mut flags: Vec<String> = Vec::new();
+        self.generate_command_flags(&mut flags);
+
+        flags.push("--internal-node-stake-sol".to_string());
+        flags.push(self.validator_config.internal_node_stake_sol.to_string());
+
+        flags.push("--internal-node-sol".to_string());
+        flags.push(self.validator_config.internal_node_sol.to_string());
+
+        if let Some(shred_version) = self.validator_config.shred_version {
+            flags.push("--expected-shred-version".to_string());
+            flags.push(shred_version.to_string());
+        }
+
+        self.add_known_validators_if_exists(&mut flags);
+
+        flags
+    }
+
+    pub fn create_validator_replica_set(
+        &mut self,
+        image: &DockerImage,
+        secret_name: Option<String>,
+        label_selector: &BTreeMap<String, String>,
+        validator_index: usize,
+    ) -> Result<ReplicaSet, Box<dyn Error>> {
+        let mut env_vars = self.set_non_bootstrap_environment_variables();
+        if self.metrics.is_some() {
+            env_vars.push(self.get_metrics_env_var_secret())
+        }
+        env_vars.append(&mut self.set_load_balancer_environment_variables());
+
+        let accounts_volume = Some(vec![Volume {
+            name: format!("validator-accounts-volume-{validator_index}"),
+            secret: Some(SecretVolumeSource {
+                secret_name,
+                ..Default::default()
+            }),
+            ..Default::default()
+        }]);
+
+        let accounts_volume_mount = Some(vec![VolumeMount {
+            name: format!("validator-accounts-volume-{validator_index}"),
+            mount_path: "/home/solana/validator-accounts".to_string(),
+            ..Default::default()
+        }]);
+
+        let mut command =
+            vec!["/home/solana/k8s-cluster-scripts/validator-startup-script.sh".to_string()];
+        command.extend(self.generate_validator_command_flags());
+
+        k8s_helpers::create_replica_set(
+            format!("{}-{validator_index}", ValidatorType::Standard),
+            self.namespace.clone(),
+            label_selector.clone(),
+            image.clone(),
+            env_vars,
+            command.clone(),
+            accounts_volume,
+            accounts_volume_mount,
+            self.pod_requests.requests.clone(),
+            None,
+        )
     }
 }
