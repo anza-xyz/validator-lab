@@ -15,12 +15,14 @@
 - [x] Create Genesis
     - [x] Generate faucet and bootstrap accounts
     - [x] Build genesis
-- [x] Docker Build
-    - [x] Build Bootstrap Image
-    - [x] Push Image to registry
+- [x] Docker Build & Push
+    - [x] Bootstrap
+    - [x] Validator (regular)
+    - [ ] RPC nodes
+    - [ ] Client
 - [ ] Create & Deploy Secrets
     - [x] Bootstrap
-    - [ ] Validator (regular)
+    - [] Validator (regular)
     - [ ] RPC nodes
     - [ ] Client
 - [ ] Create & Deploy Selector

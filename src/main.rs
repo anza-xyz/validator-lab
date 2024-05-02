@@ -475,6 +475,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ));
     cluster_images.set_item(bootstrap_validator, ValidatorType::Bootstrap);
 
+    if num_validators > 0 {
+        let validator = Validator::new(DockerImage::new(
+            registry_name.clone(),
+            ValidatorType::Standard,
+            image_name.clone(),
+            image_tag.clone(),
+        ));
+        cluster_images.set_item(validator, ValidatorType::Standard);
+    }
+
     if build_config.docker_build() {
         for v in cluster_images.get_validators() {
             docker.build_image(solana_root.get_root_path(), v.image())?;
@@ -574,5 +584,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
+
     Ok(())
 }

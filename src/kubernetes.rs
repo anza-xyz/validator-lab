@@ -115,6 +115,36 @@ impl<'a> Kubernetes<'a> {
         k8s_helpers::create_secret(secret_name.to_string(), secrets)
     }
 
+    pub fn create_validator_secret(
+        &self,
+        validator_index: usize,
+        config_dir: &Path,
+    ) -> Result<Secret, Box<dyn Error>> {
+        let secret_name = format!("validator-accounts-secret-{validator_index}");
+
+        let mut secrets = BTreeMap::new();
+        secrets.insert(
+            "identity".to_string(),
+            SecretType::File {
+                path: config_dir.join(format!("validator-identity-{validator_index}.json")),
+            },
+        );
+
+        let secret_types = ["vote", "stake"];
+        for &type_name in secret_types.iter() {
+            secrets.insert(
+                type_name.to_string(),
+                SecretType::File {
+                    path: config_dir.join(format!(
+                        "validator-{type_name}-account-{validator_index}.json"
+                    )),
+                },
+            );
+        }
+
+        k8s_helpers::create_secret(secret_name.to_string(), secrets)
+    }
+
     pub fn add_known_validator(&mut self, pubkey: Pubkey) {
         self.validator_config.known_validators.push(pubkey);
         info!("pubkey added to known validators: {:?}", pubkey);
