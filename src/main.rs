@@ -567,7 +567,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let replica_set = kub_controller.create_bootstrap_validator_replica_set(
         bootstrap_validator.image(),
         bootstrap_validator.secret().metadata.name.clone(),
-        bootstrap_validator.replica_set_labels(),
+        bootstrap_validator.info_labels(),
     )?;
     bootstrap_validator.set_replica_set(replica_set);
 
@@ -581,7 +581,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // create and deploy bootstrap-service
-    let bootstrap_service = kub_controller.create_bootstrap_service(
+    let bootstrap_service = kub_controller.create_service(
         "bootstrap-validator-service",
         bootstrap_validator.service_labels(),
     );
@@ -650,7 +650,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let replica_set = kub_controller.create_validator_replica_set(
             validator.image(),
             validator.secret().metadata.name.clone(),
-            validator.replica_set_labels(),
+            validator.info_labels(),
             validator_index,
         )?;
         validator.set_replica_set(replica_set);
@@ -659,6 +659,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .deploy_replicas_set(validator.replica_set())
             .await?;
         info!("validator replica set ({validator_index}) deployed successfully");
+
+        let validator_service = kub_controller.create_service(
+            &format!("validator-service-{validator_index}"),
+            validator.service_labels(),
+        );
+        kub_controller.deploy_service(&validator_service).await?;
+        info!("validator service ({validator_index}) deployed successfully");
     }
 
     Ok(())

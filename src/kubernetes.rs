@@ -258,7 +258,7 @@ impl<'a> Kubernetes<'a> {
         api.create(&post_params, replica_set).await
     }
 
-    pub fn create_bootstrap_service(
+    pub fn create_service(
         &self,
         service_name: &str,
         label_selector: &BTreeMap<String, String>,

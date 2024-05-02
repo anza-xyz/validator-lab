@@ -58,7 +58,7 @@ impl Validator {
         }
     }
 
-    pub fn replica_set_labels(&self) -> &BTreeMap<String, String> {
+    pub fn info_labels(&self) -> &BTreeMap<String, String> {
         &self.info_labels
     }
 
