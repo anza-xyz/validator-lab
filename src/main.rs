@@ -585,5 +585,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
 
+    if num_validators == 0 {
+        info!("No validators to deploy. Returning");
+        return Ok(());
+    }
+    let validator = cluster_images.validator()?;
+
+    for validator_index in 0..num_validators {
+        // Create and deploy validators secrets
+        let validator_secret =
+            kub_controller.create_validator_secret(validator_index, &config_directory)?;
+        validator.set_secret(validator_secret);
+        kub_controller.deploy_secret(validator.secret()).await?;
+        info!("Deployed Validator {validator_index} secret");
+    }
+
     Ok(())
 }
