@@ -26,6 +26,7 @@ kubectl create ns <namespace>
 ```
 cargo run --bin cluster --
     -n <namespace>
+    --num_validators <number-of-non-bootstrap-voting-validators>
     --local-path <path-to-local-agave-monorepo>
 ```
 
@@ -33,6 +34,7 @@ cargo run --bin cluster --
 ```
 cargo run --bin cluster --
     -n <namespace>
+    --num_validators <number-of-non-bootstrap-voting-validators>
     --release-channel <agave-version: e.g. v1.17.28> # note: MUST include the "v"
 ```
 
@@ -42,6 +44,7 @@ Example:
 cargo run --bin cluster -- 
     -n <namespace> 
     --local-path /home/sol/solana
+    --num_validators <number-of-non-bootstrap-voting-validators>
     # genesis config. Optional: Many of these have defaults
     --hashes-per-tick <hashes-per-tick>
     --enable-warmup-epochs <true|false>

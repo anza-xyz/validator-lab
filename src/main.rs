@@ -66,6 +66,18 @@ fn parse_matches() -> clap::ArgMatches {
                 .help("Absolute path to build directory for release-channel
                 e.g. /home/sol/validator-lab-build"),
         )
+        // non-bootstrap validators
+        .arg(
+            Arg::with_name("number_of_validators")
+                .long("num-validators")
+                .takes_value(true)
+                .default_value("1")
+                .help("Number of validators to deploy")
+                .validator(|s| match s.parse::<i32>() {
+                    Ok(n) if n > 0 => Ok(()),
+                    _ => Err(String::from("number_of_validators should be >= 0")),
+                }),
+        )
         // Genesis Config
         .arg(
             Arg::with_name("hashes_per_tick")
@@ -268,6 +280,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         build_directory: matches.value_of("build_directory").map(PathBuf::from),
     };
 
+    let num_validators = value_t_or_exit!(matches, "number_of_validators", usize);
+
     let deploy_method = if let Some(local_path) = matches.value_of("local_path") {
         DeployMethod::Local(local_path.to_owned())
     } else if let Some(release_channel) = matches.value_of("release_channel") {
@@ -432,8 +446,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     genesis
         .generate(solana_root.get_root_path(), &build_path)
         .await?;
-
     info!("Created genesis successfully");
+
+    // generate standard validator accounts
+    genesis.generate_accounts(ValidatorType::Standard, num_validators)?;
+    info!("Generated {num_validators} validator account(s)");
 
     //unwraps are safe here. since their requirement is enforced by argmatches
     let docker = DockerConfig::new(

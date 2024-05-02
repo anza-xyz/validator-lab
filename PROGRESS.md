@@ -46,7 +46,7 @@
     - [ ] RPC nodes
     - [ ] Client
 - [ ] Create accounts
-    - [ ] Validator (regular)
+    - [x] Validator (regular)
     - [ ] RPC
     - [ ] Client
 - [ ] Add feature flags to configure:
