@@ -16,6 +16,7 @@ use {
             DEFAULT_MAX_GENESIS_ARCHIVE_UNPACKED_SIZE,
         },
         kubernetes::{Kubernetes, PodRequests},
+        ledger_helper::LedgerHelper,
         release::{BuildConfig, BuildType, DeployMethod},
         validator::{LabelType, Validator},
         validator_config::ValidatorConfig,
@@ -469,6 +470,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // generate standard validator accounts
     genesis.generate_accounts(ValidatorType::Standard, num_validators)?;
     info!("Generated {num_validators} validator account(s)");
+
+    let ledger_dir = config_directory.join("bootstrap-validator");
+    let shred_version = LedgerHelper::get_shred_version(&ledger_dir)?;
+    kub_controller.set_shred_version(shred_version);
 
     //unwraps are safe here. since their requirement is enforced by argmatches
     let docker = DockerConfig::new(

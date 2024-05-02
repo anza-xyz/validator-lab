@@ -64,6 +64,10 @@ impl<'a> Kubernetes<'a> {
         }
     }
 
+    pub fn set_shred_version(&mut self, shred_version: u16) {
+        self.validator_config.shred_version = Some(shred_version);
+    }
+
     pub async fn namespace_exists(&self) -> Result<bool, kube::Error> {
         let namespaces: Api<Namespace> = Api::all(self.k8s_client.clone());
         let namespace_list = namespaces.list(&ListParams::default()).await?;
