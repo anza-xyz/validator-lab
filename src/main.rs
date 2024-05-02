@@ -529,7 +529,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "bootstrap-validator-selector",
         LabelType::Service,
     );
-    bootstrap_validator.add_label("validator/type", "bootstrap", LabelType::Info);
+    bootstrap_validator.add_label(
+        "validator/type",
+        bootstrap_validator.validator_type().to_string(),
+        LabelType::Info,
+    );
     bootstrap_validator.add_label(
         "validator/identity",
         bootstrap_keypair.pubkey().to_string(),
@@ -598,6 +602,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         validator.set_secret(validator_secret);
         kub_controller.deploy_secret(validator.secret()).await?;
         info!("Deployed Validator {validator_index} secret");
+
+        let identity_path =
+            config_directory.join(format!("validator-identity-{validator_index}.json"));
+        let validator_keypair =
+            read_keypair_file(identity_path).expect("Failed to read validator keypair file");
+
+        validator.add_label(
+            "validator/name",
+            &format!("validator-{validator_index}"),
+            LabelType::Service,
+        );
+        validator.add_label(
+            "validator/type",
+            validator.validator_type().to_string(),
+            LabelType::Info,
+        );
+        validator.add_label(
+            "validator/identity",
+            validator_keypair.pubkey().to_string(),
+            LabelType::Info,
+        );
     }
 
     Ok(())
