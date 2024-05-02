@@ -654,6 +654,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             validator_index,
         )?;
         validator.set_replica_set(replica_set);
+
+        kub_controller
+            .deploy_replicas_set(validator.replica_set())
+            .await?;
+        info!("validator replica set ({validator_index}) deployed successfully");
     }
 
     Ok(())
