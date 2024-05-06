@@ -158,17 +158,16 @@ impl DockerConfig {
 
         match validator_type {
             ValidatorType::Bootstrap | ValidatorType::Standard => {
-                let files_to_copy = [
-                    format!("{validator_type}-startup-script.sh"),
-                    "common.sh".to_string(),
-                ];
-                for file_name in files_to_copy.iter() {
-                    Self::write_startup_script_to_docker_directory(
-                        file_name,
-                        docker_path,
-                        validator_type,
-                    )?;
-                }
+                let file_name = format!("{validator_type}-startup-script.sh");
+                Self::write_startup_script_to_docker_directory(
+                    &file_name,
+                    docker_path,
+                    validator_type,
+                )?;
+                StartupScripts::write_script_to_file(
+                    StartupScripts::common(),
+                    &docker_path.join("common.sh"),
+                )?;
             }
             ValidatorType::RPC | ValidatorType::Client => todo!(),
         }

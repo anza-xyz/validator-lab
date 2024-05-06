@@ -17,8 +17,8 @@ use {
 };
 
 pub enum SecretType {
-    Value { v: String },
-    File { path: PathBuf },
+    Value { v: String },    // will be read by pod via ENV variable
+    File { path: PathBuf }, // will be read by pod as .json file
 }
 
 fn build_secret(name: String, data: BTreeMap<String, ByteString>) -> Secret {
@@ -43,7 +43,7 @@ pub fn create_secret(
             SecretType::File { path } => {
                 let content = std::fs::read(&path)
                     .map_err(|err| format!("Failed to read file '{:?}': {}", path, err))?;
-                Ok((label, ByteString(content)))
+                Ok((format!("{label}.json"), ByteString(content)))
             }
         })
         .collect::<Result<BTreeMap<String, ByteString>, Box<dyn Error>>>()?;

@@ -17,10 +17,9 @@ impl StartupScripts {
         file.write_all(script.as_bytes())?;
         Ok(())
     }
-
+    
     pub fn bootstrap() -> &'static str {
-        r#"
-#!/bin/bash
+        r#"#!/bin/bash
 set -e
 
 # start faucet
@@ -198,12 +197,11 @@ while true; do
 
   kill_node
 done
-        "#
+"#
     }
 
     pub fn validator() -> &'static str {
-        r#"
-#!/bin/bash
+        r#"#!/bin/bash
 
 # Start Validator
 # shellcheck disable=SC1091
@@ -614,7 +612,7 @@ while true; do
 
   kill_node
 done
-      "#
+"#
     }
 
     pub fn common() -> &'static str {
@@ -742,6 +740,6 @@ replace_arg() {
     fi
   done
 }
-        "#
+"#
     }
 }

@@ -73,10 +73,10 @@ fn parse_matches() -> clap::ArgMatches {
             Arg::with_name("number_of_validators")
                 .long("num-validators")
                 .takes_value(true)
-                .default_value("1")
+                .default_value("0")
                 .help("Number of validators to deploy")
                 .validator(|s| match s.parse::<i32>() {
-                    Ok(n) if n > 0 => Ok(()),
+                    Ok(n) if n >= 0 => Ok(()),
                     _ => Err(String::from("number_of_validators should be >= 0")),
                 }),
         )
