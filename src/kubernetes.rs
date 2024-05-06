@@ -20,7 +20,7 @@ use {
         Client,
     },
     log::*,
-    solana_sdk::{pubkey::Pubkey, signature::keypair::read_keypair_file, signer::Signer},
+    solana_sdk::pubkey::Pubkey,
     std::{collections::BTreeMap, error::Error, path::Path},
 };
 
@@ -64,6 +64,10 @@ impl<'a> Kubernetes<'a> {
         }
     }
 
+    pub fn set_shred_version(&mut self, shred_version: u16) {
+        self.validator_config.shred_version = Some(shred_version);
+    }
+
     pub async fn namespace_exists(&self) -> Result<bool, kube::Error> {
         let namespaces: Api<Namespace> = Api::all(self.k8s_client.clone());
         let namespace_list = namespaces.list(&ListParams::default()).await?;
@@ -85,10 +89,6 @@ impl<'a> Kubernetes<'a> {
         let identity_key_path = config_dir.join("bootstrap-validator/identity.json");
         let vote_key_path = config_dir.join("bootstrap-validator/vote-account.json");
         let stake_key_path = config_dir.join("bootstrap-validator/stake-account.json");
-
-        let bootstrap_keypair = read_keypair_file(&identity_key_path)
-            .expect("Failed to read bootstrap validator keypair file");
-        self.add_known_validator(bootstrap_keypair.pubkey());
 
         let mut secrets = BTreeMap::new();
         secrets.insert(
@@ -119,7 +119,37 @@ impl<'a> Kubernetes<'a> {
         k8s_helpers::create_secret(secret_name.to_string(), secrets)
     }
 
-    fn add_known_validator(&mut self, pubkey: Pubkey) {
+    pub fn create_validator_secret(
+        &self,
+        validator_index: usize,
+        config_dir: &Path,
+    ) -> Result<Secret, Box<dyn Error>> {
+        let secret_name = format!("validator-accounts-secret-{validator_index}");
+
+        let mut secrets = BTreeMap::new();
+        secrets.insert(
+            "identity".to_string(),
+            SecretType::File {
+                path: config_dir.join(format!("validator-identity-{validator_index}.json")),
+            },
+        );
+
+        let secret_types = ["vote", "stake"];
+        for &type_name in secret_types.iter() {
+            secrets.insert(
+                type_name.to_string(),
+                SecretType::File {
+                    path: config_dir.join(format!(
+                        "validator-{type_name}-account-{validator_index}.json"
+                    )),
+                },
+            );
+        }
+
+        k8s_helpers::create_secret(secret_name.to_string(), secrets)
+    }
+
+    pub fn add_known_validator(&mut self, pubkey: Pubkey) {
         self.validator_config.known_validators.push(pubkey);
         info!("pubkey added to known validators: {:?}", pubkey);
     }
@@ -172,7 +202,7 @@ impl<'a> Kubernetes<'a> {
         command.extend(self.generate_bootstrap_command_flags());
 
         k8s_helpers::create_replica_set(
-            ValidatorType::Bootstrap,
+            ValidatorType::Bootstrap.to_string(),
             self.namespace.clone(),
             label_selector.clone(),
             image_name.clone(),
@@ -228,7 +258,7 @@ impl<'a> Kubernetes<'a> {
         api.create(&post_params, replica_set).await
     }
 
-    pub fn create_bootstrap_service(
+    pub fn create_service(
         &self,
         service_name: &str,
         label_selector: &BTreeMap<String, String>,
@@ -264,10 +294,7 @@ impl<'a> Kubernetes<'a> {
         )
     }
 
-    pub async fn check_replica_set_ready(
-        &self,
-        replica_set_name: &str,
-    ) -> Result<bool, kube::Error> {
+    pub async fn is_replica_set_ready(&self, replica_set_name: &str) -> Result<bool, kube::Error> {
         let replica_sets: Api<ReplicaSet> =
             Api::namespaced(self.k8s_client.clone(), self.namespace.as_str());
         let replica_set = replica_sets.get(replica_set_name).await?;
@@ -283,7 +310,7 @@ impl<'a> Kubernetes<'a> {
         Ok(available_validators >= desired_validators)
     }
 
-    pub fn create_metrics_secret(&self) -> Result<Secret, Box<dyn Error>> {
+    pub fn create_metrics_secret(&self) -> Result<Secret, Box<dyn std::error::Error>> {
         let mut data = BTreeMap::new();
         if let Some(metrics) = &self.metrics {
             data.insert(
@@ -316,5 +343,132 @@ impl<'a> Kubernetes<'a> {
             }),
             ..Default::default()
         }
+    }
+
+    fn set_non_bootstrap_environment_variables(&self) -> Vec<EnvVar> {
+        vec![
+            k8s_helpers::create_environment_variable(
+                "NAMESPACE".to_string(),
+                None,
+                Some("metadata.namespace".to_string()),
+            ),
+            k8s_helpers::create_environment_variable(
+                "BOOTSTRAP_RPC_ADDRESS".to_string(),
+                Some("bootstrap-validator-service.$(NAMESPACE).svc.cluster.local:8899".to_string()),
+                None,
+            ),
+            k8s_helpers::create_environment_variable(
+                "BOOTSTRAP_GOSSIP_ADDRESS".to_string(),
+                Some("bootstrap-validator-service.$(NAMESPACE).svc.cluster.local:8001".to_string()),
+                None,
+            ),
+            k8s_helpers::create_environment_variable(
+                "BOOTSTRAP_FAUCET_ADDRESS".to_string(),
+                Some("bootstrap-validator-service.$(NAMESPACE).svc.cluster.local:9900".to_string()),
+                None,
+            ),
+        ]
+    }
+
+    fn set_load_balancer_environment_variables(&self) -> Vec<EnvVar> {
+        vec![
+            k8s_helpers::create_environment_variable(
+                "LOAD_BALANCER_RPC_ADDRESS".to_string(),
+                Some(
+                    "bootstrap-and-non-voting-lb-service.$(NAMESPACE).svc.cluster.local:8899"
+                        .to_string(),
+                ),
+                None,
+            ),
+            k8s_helpers::create_environment_variable(
+                "LOAD_BALANCER_GOSSIP_ADDRESS".to_string(),
+                Some(
+                    "bootstrap-and-non-voting-lb-service.$(NAMESPACE).svc.cluster.local:8001"
+                        .to_string(),
+                ),
+                None,
+            ),
+            k8s_helpers::create_environment_variable(
+                "LOAD_BALANCER_FAUCET_ADDRESS".to_string(),
+                Some(
+                    "bootstrap-and-non-voting-lb-service.$(NAMESPACE).svc.cluster.local:9900"
+                        .to_string(),
+                ),
+                None,
+            ),
+        ]
+    }
+
+    fn add_known_validators_if_exists(&self, flags: &mut Vec<String>) {
+        for key in self.validator_config.known_validators.iter() {
+            flags.push("--known-validator".to_string());
+            flags.push(key.to_string());
+        }
+    }
+
+    fn generate_validator_command_flags(&self) -> Vec<String> {
+        let mut flags: Vec<String> = Vec::new();
+        self.generate_command_flags(&mut flags);
+
+        flags.push("--internal-node-stake-sol".to_string());
+        flags.push(self.validator_config.internal_node_stake_sol.to_string());
+
+        flags.push("--internal-node-sol".to_string());
+        flags.push(self.validator_config.internal_node_sol.to_string());
+
+        if let Some(shred_version) = self.validator_config.shred_version {
+            flags.push("--expected-shred-version".to_string());
+            flags.push(shred_version.to_string());
+        }
+
+        self.add_known_validators_if_exists(&mut flags);
+
+        flags
+    }
+
+    pub fn create_validator_replica_set(
+        &mut self,
+        image: &DockerImage,
+        secret_name: Option<String>,
+        label_selector: &BTreeMap<String, String>,
+        validator_index: usize,
+    ) -> Result<ReplicaSet, Box<dyn Error>> {
+        let mut env_vars = self.set_non_bootstrap_environment_variables();
+        if self.metrics.is_some() {
+            env_vars.push(self.get_metrics_env_var_secret())
+        }
+        env_vars.append(&mut self.set_load_balancer_environment_variables());
+
+        let accounts_volume = Some(vec![Volume {
+            name: format!("validator-accounts-volume-{validator_index}"),
+            secret: Some(SecretVolumeSource {
+                secret_name,
+                ..Default::default()
+            }),
+            ..Default::default()
+        }]);
+
+        let accounts_volume_mount = Some(vec![VolumeMount {
+            name: format!("validator-accounts-volume-{validator_index}"),
+            mount_path: "/home/solana/validator-accounts".to_string(),
+            ..Default::default()
+        }]);
+
+        let mut command =
+            vec!["/home/solana/k8s-cluster-scripts/validator-startup-script.sh".to_string()];
+        command.extend(self.generate_validator_command_flags());
+
+        k8s_helpers::create_replica_set(
+            format!("{}-{validator_index}", ValidatorType::Standard),
+            self.namespace.clone(),
+            label_selector.clone(),
+            image.clone(),
+            env_vars,
+            command.clone(),
+            accounts_volume,
+            accounts_volume_mount,
+            self.pod_requests.requests.clone(),
+            None,
+        )
     }
 }

@@ -27,7 +27,6 @@ kubectl create ns <namespace>
 cargo run --bin cluster --
     -n <namespace>
     --local-path <path-to-local-agave-monorepo>
-    --validator-lab-dir <path-to-validator-lab-directory>
 ```
 
 #### Build specific Agave release
@@ -35,16 +34,15 @@ cargo run --bin cluster --
 cargo run --bin cluster --
     -n <namespace>
     --release-channel <agave-version: e.g. v1.17.28> # note: MUST include the "v"
-    --validator-lab-dir <path-to-validator-lab-directory>
 ```
 
-#### Build from Local Repo and Configure Genesis and Bootstrap Validator Image
+#### Build from Local Repo and Configure Genesis and Bootstrap and Validator Image
 Example:
 ```
 cargo run --bin cluster -- 
     -n <namespace> 
     --local-path /home/sol/solana
-    --validator-lab-dir /home/sol/validator-lab
+    --num_validators <number-of-non-bootstrap-voting-validators>
     # genesis config. Optional: Many of these have defaults
     --hashes-per-tick <hashes-per-tick>
     --enable-warmup-epochs <true|false>
@@ -59,14 +57,20 @@ cargo run --bin cluster --
     --tag <docker-image-tag>            # e.g. v1
     --base-image <base-image>           # e.g. ubuntu:20.04
     --image-name <docker-image-name>    # e.g. cluster-image
+    # validator config
+    --full-rpc
+    --internal-node-sol <Sol>
+    --internal-node-stake-sol <Sol>
+    # kubernetes config
+    --cpu-requests <cores>
+    --memory-requests <memory>
 ```
 
 ## Metrics
 1) Setup metrics database:
 ```
-cd scripts/
-./init-metrics -c <database-name> <metrics-username>
-# enter password when promted
+./init-metrics -c <database-name> -u <metrics-username>
+# enter password when prompted
 ```
 2) add the following to your `cluster` command from above
 ```

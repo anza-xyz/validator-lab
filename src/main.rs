@@ -5,16 +5,18 @@ use {
         DEFAULT_MAX_LEDGER_SHREDS, DEFAULT_MIN_MAX_LEDGER_SHREDS,
     },
     solana_sdk::{signature::keypair::read_keypair_file, signer::Signer},
-    std::{fs, path::PathBuf},
+    std::{fs, path::PathBuf, result::Result},
     strum::VariantNames,
     validator_lab::{
         cluster_images::ClusterImages,
         docker::{DockerConfig, DockerImage},
         genesis::{
             Genesis, GenesisFlags, DEFAULT_BOOTSTRAP_NODE_SOL, DEFAULT_BOOTSTRAP_NODE_STAKE_SOL,
-            DEFAULT_FAUCET_LAMPORTS, DEFAULT_MAX_GENESIS_ARCHIVE_UNPACKED_SIZE,
+            DEFAULT_FAUCET_LAMPORTS, DEFAULT_INTERNAL_NODE_SOL, DEFAULT_INTERNAL_NODE_STAKE_SOL,
+            DEFAULT_MAX_GENESIS_ARCHIVE_UNPACKED_SIZE,
         },
         kubernetes::{Kubernetes, PodRequests},
+        ledger_helper::LedgerHelper,
         release::{BuildConfig, BuildType, DeployMethod},
         validator::{LabelType, Validator},
         validator_config::ValidatorConfig,
@@ -65,6 +67,18 @@ fn parse_matches() -> clap::ArgMatches {
                 .conflicts_with("local_path")
                 .help("Absolute path to build directory for release-channel
                 e.g. /home/sol/validator-lab-build"),
+        )
+        // non-bootstrap validators
+        .arg(
+            Arg::with_name("number_of_validators")
+                .long("num-validators")
+                .takes_value(true)
+                .default_value("1")
+                .help("Number of validators to deploy")
+                .validator(|s| match s.parse::<i32>() {
+                    Ok(n) if n > 0 => Ok(()),
+                    _ => Err(String::from("number_of_validators should be >= 0")),
+                }),
         )
         // Genesis Config
         .arg(
@@ -202,6 +216,20 @@ fn parse_matches() -> clap::ArgMatches {
                 .long("full-rpc")
                 .help("Validator config. Support full RPC services on all nodes"),
         )
+        .arg(
+            Arg::with_name("internal_node_sol")
+                .long("internal-node-sol")
+                .takes_value(true)
+                .default_value(&DEFAULT_INTERNAL_NODE_SOL.to_string())
+                .help("Amount to fund internal nodes in genesis config."),
+        )
+        .arg(
+            Arg::with_name("internal_node_stake_sol")
+                .long("internal-node-stake-sol")
+                .takes_value(true)
+                .default_value(&DEFAULT_INTERNAL_NODE_STAKE_SOL.to_string())
+                .help("Amount to stake internal nodes (Sol)."),
+        )
         // kubernetes config
         .arg(
             Arg::with_name("cpu_requests")
@@ -257,7 +285,7 @@ fn parse_matches() -> clap::ArgMatches {
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if std::env::var("RUST_LOG").is_err() {
         std::env::set_var("RUST_LOG", "INFO");
     }
@@ -267,6 +295,8 @@ async fn main() {
         namespace: matches.value_of("cluster_namespace").unwrap_or_default(),
         build_directory: matches.value_of("build_directory").map(PathBuf::from),
     };
+
+    let num_validators = value_t_or_exit!(matches, "number_of_validators", usize);
 
     let deploy_method = if let Some(local_path) = matches.value_of("local_path") {
         DeployMethod::Local(local_path.to_owned())
@@ -295,16 +325,18 @@ async fn main() {
 
     if let Ok(metadata) = fs::metadata(solana_root.get_root_path()) {
         if !metadata.is_dir() {
-            return error!(
+            return Err(format!(
                 "Build path is not a directory: {}",
                 solana_root.get_root_path().display()
-            );
+            )
+            .into());
         }
     } else {
-        return error!(
+        return Err(format!(
             "Build directory not found: {}",
             solana_root.get_root_path().display()
-        );
+        )
+        .into());
     }
 
     let build_config = BuildConfig::new(
@@ -366,6 +398,9 @@ async fn main() {
 
     let limit_ledger_size = value_t_or_exit!(matches, "limit_ledger_size", u64);
     let mut validator_config = ValidatorConfig {
+        internal_node_sol: value_t_or_exit!(matches, "internal_node_sol", f64),
+        internal_node_stake_sol: value_t_or_exit!(matches, "internal_node_stake_sol", f64),
+        shred_version: None, // set after genesis created
         max_ledger_size: if limit_ledger_size < DEFAULT_MIN_MAX_LEDGER_SHREDS {
             clap::Error::with_description(
                     format!("The provided --limit-ledger-size value was too small, the minimum value is {DEFAULT_MIN_MAX_LEDGER_SHREDS}"),
@@ -405,59 +440,40 @@ async fn main() {
     )
     .await;
 
-    match kub_controller.namespace_exists().await {
-        Ok(true) => (),
-        Ok(false) => {
-            error!(
-                "Namespace: '{}' doesn't exist. Exiting...",
-                environment_config.namespace
-            );
-            return;
-        }
-        Err(err) => {
-            error!("Error: {err}");
-            return;
-        }
+    let exists = kub_controller.namespace_exists().await?;
+    if !exists {
+        return Err(format!(
+            "Namespace: '{}' doesn't exist. Exiting...",
+            environment_config.namespace
+        )
+        .into());
     }
 
-    match build_config.prepare().await {
-        Ok(_) => info!("Validator setup prepared successfully"),
-        Err(err) => {
-            error!("Error: {err}");
-            return;
-        }
-    }
+    build_config.prepare().await?;
+    info!("Validator setup prepared successfully");
 
     let config_directory = solana_root.get_root_path().join("config-k8s");
     let mut genesis = Genesis::new(config_directory.clone(), genesis_flags);
 
-    match genesis.generate_faucet() {
-        Ok(_) => info!("Generated faucet account"),
-        Err(err) => {
-            error!("generate faucet error! {err}");
-            return;
-        }
-    }
+    genesis.generate_faucet()?;
+    info!("Generated faucet account");
 
-    match genesis.generate_accounts(ValidatorType::Bootstrap, 1) {
-        Ok(_) => info!("Generated bootstrap account"),
-        Err(err) => {
-            error!("generate accounts error! {err}");
-            return;
-        }
-    }
+    genesis.generate_accounts(ValidatorType::Bootstrap, 1)?;
+    info!("Generated bootstrap account");
 
     // creates genesis and writes to binary file
-    match genesis
+    genesis
         .generate(solana_root.get_root_path(), &build_path)
-        .await
-    {
-        Ok(_) => info!("Created genesis successfully"),
-        Err(err) => {
-            error!("generate genesis error! {err}");
-            return;
-        }
-    }
+        .await?;
+    info!("Created genesis successfully");
+
+    // generate standard validator accounts
+    genesis.generate_accounts(ValidatorType::Standard, num_validators)?;
+    info!("Generated {num_validators} validator account(s)");
+
+    let ledger_dir = config_directory.join("bootstrap-validator");
+    let shred_version = LedgerHelper::get_shred_version(&ledger_dir)?;
+    kub_controller.set_shred_version(shred_version);
 
     //unwraps are safe here. since their requirement is enforced by argmatches
     let docker = DockerConfig::new(
@@ -482,63 +498,41 @@ async fn main() {
     ));
     cluster_images.set_item(bootstrap_validator, ValidatorType::Bootstrap);
 
+    if num_validators > 0 {
+        let validator = Validator::new(DockerImage::new(
+            registry_name.clone(),
+            ValidatorType::Standard,
+            image_name.clone(),
+            image_tag.clone(),
+        ));
+        cluster_images.set_item(validator, ValidatorType::Standard);
+    }
+
     if build_config.docker_build() {
         for v in cluster_images.get_validators() {
-            match docker.build_image(solana_root.get_root_path(), v.image()) {
-                Ok(_) => info!("{} image built successfully", v.validator_type()),
-                Err(err) => {
-                    error!("Failed to build docker image {err}");
-                    return;
-                }
-            }
+            docker.build_image(solana_root.get_root_path(), v.image())?;
+            info!("{} image built successfully", v.validator_type());
         }
 
-        match docker.push_images(cluster_images.get_validators()) {
-            Ok(_) => info!("Validator images pushed successfully"),
-            Err(err) => {
-                error!("Failed to push Validator docker image {err}");
-                return;
-            }
-        }
+        docker.push_images(cluster_images.get_validators())?;
+        info!("Validator images pushed successfully");
     }
 
     // metrics secret create once and use by all pods
     if kub_controller.metrics.is_some() {
-        let metrics_secret = match kub_controller.create_metrics_secret() {
-            Ok(secret) => secret,
-            Err(err) => {
-                error!("Failed to create metrics secret! {err}");
-                return;
-            }
-        };
-        match kub_controller.deploy_secret(&metrics_secret).await {
-            Ok(_) => (),
-            Err(err) => {
-                error!("{err}");
-                return;
-            }
-        }
+        let metrics_secret = kub_controller.create_metrics_secret()?;
+        kub_controller.deploy_secret(&metrics_secret).await?;
     };
 
-    let bootstrap_validator = cluster_images.bootstrap().expect("should be bootstrap");
-    match kub_controller.create_bootstrap_secret("bootstrap-accounts-secret", &config_directory) {
-        Ok(secret) => bootstrap_validator.set_secret(secret),
-        Err(err) => {
-            error!("Failed to create bootstrap secret! {err}");
-            return;
-        }
-    };
+    let bootstrap_validator = cluster_images.bootstrap()?;
+    let secret =
+        kub_controller.create_bootstrap_secret("bootstrap-accounts-secret", &config_directory)?;
+    bootstrap_validator.set_secret(secret);
 
-    match kub_controller
+    kub_controller
         .deploy_secret(bootstrap_validator.secret())
-        .await
-    {
-        Ok(_) => info!("Deployed Bootstrap Secret"),
-        Err(err) => {
-            error!("{err}");
-            return;
-        }
-    }
+        .await?;
+    info!("Deployed Bootstrap Secret");
 
     // Create Bootstrap labels
     // Bootstrap needs two labels, one for each service.
@@ -546,6 +540,8 @@ async fn main() {
     let identity_path = config_directory.join("bootstrap-validator/identity.json");
     let bootstrap_keypair =
         read_keypair_file(identity_path).expect("Failed to read bootstrap keypair file");
+    kub_controller.add_known_validator(bootstrap_keypair.pubkey());
+
     bootstrap_validator.add_label(
         "load-balancer/name",
         "load-balancer-selector",
@@ -556,7 +552,11 @@ async fn main() {
         "bootstrap-validator-selector",
         LabelType::Service,
     );
-    bootstrap_validator.add_label("validator/type", "bootstrap", LabelType::Info);
+    bootstrap_validator.add_label(
+        "validator/type",
+        bootstrap_validator.validator_type().to_string(),
+        LabelType::Info,
+    );
     bootstrap_validator.add_label(
         "validator/identity",
         bootstrap_keypair.pubkey().to_string(),
@@ -564,46 +564,31 @@ async fn main() {
     );
 
     // create bootstrap replica set
-    match kub_controller.create_bootstrap_validator_replica_set(
+    let replica_set = kub_controller.create_bootstrap_validator_replica_set(
         bootstrap_validator.image(),
         bootstrap_validator.secret().metadata.name.clone(),
-        bootstrap_validator.replica_set_labels(),
-    ) {
-        Ok(replica_set) => bootstrap_validator.set_replica_set(replica_set),
-        Err(err) => {
-            error!("Error creating bootstrap validator replicas_set: {err}");
-            return;
-        }
-    };
+        bootstrap_validator.info_labels(),
+    )?;
+    bootstrap_validator.set_replica_set(replica_set);
 
     // deploy bootstrap replica set
-    match kub_controller
+    kub_controller
         .deploy_replicas_set(bootstrap_validator.replica_set())
-        .await
-    {
-        Ok(_) => {
-            info!(
-                "{} deployed successfully",
-                bootstrap_validator.replica_set_name()
-            );
-        }
-        Err(err) => {
-            error!("Error! Failed to deploy bootstrap validator replicas_set. err: {err}");
-            return;
-        }
-    };
+        .await?;
+    info!(
+        "{} deployed successfully",
+        bootstrap_validator.replica_set_name()
+    );
 
     // create and deploy bootstrap-service
-    let bootstrap_service = kub_controller.create_bootstrap_service(
+    let bootstrap_service = kub_controller.create_service(
         "bootstrap-validator-service",
         bootstrap_validator.service_labels(),
     );
-    match kub_controller.deploy_service(&bootstrap_service).await {
-        Ok(_) => info!("bootstrap validator service deployed successfully"),
-        Err(err) => error!("Error! Failed to deploy bootstrap validator service. err: {err}"),
-    }
+    kub_controller.deploy_service(&bootstrap_service).await?;
+    info!("bootstrap validator service deployed successfully");
 
-    //load balancer service. only create one and use for all bootstrap/rpc nodes
+    // load balancer service. only create one and use for all bootstrap/rpc nodes
     // service selector matches bootstrap selector
     let load_balancer_label =
         kub_controller.create_selector("load-balancer/name", "load-balancer-selector");
@@ -612,25 +597,76 @@ async fn main() {
         .create_validator_load_balancer("bootstrap-and-rpc-node-lb-service", &load_balancer_label);
 
     //deploy load balancer
-    match kub_controller.deploy_service(&load_balancer).await {
-        Ok(_) => info!("load balancer service deployed successfully"),
-        Err(err) => error!("Error! Failed to deploy load balancer service. err: {err}"),
-    }
+    kub_controller.deploy_service(&load_balancer).await?;
+    info!("load balancer service deployed successfully");
 
     // wait for bootstrap replicaset to deploy
-    while {
-        match kub_controller
-            .check_replica_set_ready(bootstrap_validator.replica_set_name().as_str())
-            .await
-        {
-            Ok(ok) => !ok, // Continue the loop if replica set is not ready: Ok(false)
-            Err(_) => panic!("Error occurred while checking replica set readiness"),
-        }
-    } {
+    while !kub_controller
+        .is_replica_set_ready(bootstrap_validator.replica_set_name().as_str())
+        .await?
+    {
         info!(
             "replica set: {} not ready...",
             bootstrap_validator.replica_set_name()
         );
-        std::thread::sleep(std::time::Duration::from_secs(1));
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
+
+    if num_validators == 0 {
+        info!("No validators to deploy. Returning");
+        return Ok(());
+    }
+    let validator = cluster_images.validator()?;
+
+    for validator_index in 0..num_validators {
+        // Create and deploy validators secrets
+        let validator_secret =
+            kub_controller.create_validator_secret(validator_index, &config_directory)?;
+        validator.set_secret(validator_secret);
+        kub_controller.deploy_secret(validator.secret()).await?;
+        info!("Deployed Validator {validator_index} secret");
+
+        let identity_path =
+            config_directory.join(format!("validator-identity-{validator_index}.json"));
+        let validator_keypair =
+            read_keypair_file(identity_path).expect("Failed to read validator keypair file");
+
+        validator.add_label(
+            "validator/name",
+            &format!("validator-{validator_index}"),
+            LabelType::Service,
+        );
+        validator.add_label(
+            "validator/type",
+            validator.validator_type().to_string(),
+            LabelType::Info,
+        );
+        validator.add_label(
+            "validator/identity",
+            validator_keypair.pubkey().to_string(),
+            LabelType::Info,
+        );
+
+        let replica_set = kub_controller.create_validator_replica_set(
+            validator.image(),
+            validator.secret().metadata.name.clone(),
+            validator.info_labels(),
+            validator_index,
+        )?;
+        validator.set_replica_set(replica_set);
+
+        kub_controller
+            .deploy_replicas_set(validator.replica_set())
+            .await?;
+        info!("validator replica set ({validator_index}) deployed successfully");
+
+        let validator_service = kub_controller.create_service(
+            &format!("validator-service-{validator_index}"),
+            validator.service_labels(),
+        );
+        kub_controller.deploy_service(&validator_service).await?;
+        info!("validator service ({validator_index}) deployed successfully");
+    }
+
+    Ok(())
 }

@@ -15,22 +15,24 @@
 - [x] Create Genesis
     - [x] Generate faucet and bootstrap accounts
     - [x] Build genesis
-- [x] Docker Build
-    - [x] Build Bootstrap Image
-    - [x] Push Image to registry
+- [x] Docker Build & Push
+    - [x] Bootstrap
+    - [x] Validator (regular)
+    - [ ] RPC nodes
+    - [ ] Client
 - [ ] Create & Deploy Secrets
     - [x] Bootstrap
-    - [ ] Validator (regular)
+    - [x] Validator (regular)
     - [ ] RPC nodes
     - [ ] Client
 - [ ] Create & Deploy Selector
     - [x] Bootstrap
-    - [ ] Validator (regular)
+    - [x] Validator (regular)
     - [ ] RPC nodes
     - [ ] Client
 - [ ] Create & Deploy Replica Set
     - [x] Bootstrap
-    - [ ] Validator (regular)
+    - [x] Validator (regular)
     - [ ] RPC nodes
     - [ ] Client
 - [ ] Create & Deploy Services
@@ -42,11 +44,11 @@
 - [x] Build and deploy Load Balancer (sits in front of bootstrap and RPC nodes)
 - [ ] Add metrics
     - [x] Bootstrap
-    - [ ] Validator (regular)
+    - [x] Validator (regular)
     - [ ] RPC nodes
     - [ ] Client
 - [ ] Create accounts
-    - [ ] Validator (regular)
+    - [x] Validator (regular)
     - [ ] RPC
     - [ ] Client
 - [ ] Add feature flags to configure:

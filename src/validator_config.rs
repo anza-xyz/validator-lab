@@ -2,6 +2,9 @@ use solana_sdk::pubkey::Pubkey;
 
 #[derive(Debug)]
 pub struct ValidatorConfig {
+    pub internal_node_sol: f64,
+    pub internal_node_stake_sol: f64,
+    pub shred_version: Option<u16>,
     pub max_ledger_size: Option<u64>,
     pub skip_poh_verify: bool,
     pub no_snapshot_fetch: bool,

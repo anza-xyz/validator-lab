@@ -52,16 +52,18 @@ impl BuildConfig {
     }
 
     pub async fn prepare(&self) -> Result<(), Box<dyn Error>> {
+        if self.build_type == BuildType::Skip {
+            info!("skipping build");
+            return Ok(());
+        }
         match &self.deploy_method {
-            DeployMethod::ReleaseChannel(channel) => match self.setup_tar_deploy(channel).await {
-                Ok(tar_directory) => {
-                    info!("Successfully setup tar file");
-                    cat_file(&tar_directory.join("version.yml")).unwrap();
-                }
-                Err(err) => return Err(err),
-            },
+            DeployMethod::ReleaseChannel(channel) => {
+                let tar_directory = self.setup_tar_deploy(channel).await?;
+                info!("Successfully setup tar file");
+                cat_file(&tar_directory.join("version.yml"))?;
+            }
             DeployMethod::Local(_) => {
-                self.setup_local_deploy()?;
+                self.build()?;
             }
         }
         info!("Completed Prepare Deploy");
@@ -86,15 +88,6 @@ impl BuildConfig {
         })?;
 
         Ok(release_dir)
-    }
-
-    fn setup_local_deploy(&self) -> Result<(), Box<dyn Error>> {
-        if self.build_type != BuildType::Skip {
-            self.build()?;
-        } else {
-            info!("Build skipped due to --build-type skip");
-        }
-        Ok(())
     }
 
     fn build(&self) -> Result<(), Box<dyn Error>> {

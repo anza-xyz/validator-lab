@@ -56,6 +56,16 @@ pub enum ValidatorType {
     Client,
 }
 
+impl ValidatorType {
+    fn script(&self) -> Result<&'static str, Box<dyn std::error::Error>> {
+        match self {
+            ValidatorType::Bootstrap => Ok(startup_scripts::StartupScripts::bootstrap()),
+            ValidatorType::Standard => Ok(startup_scripts::StartupScripts::validator()),
+            _ => Err(format!("ValidatorType {:?} not supported!", self).into()),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Metrics {
     pub host: String,
@@ -94,6 +104,7 @@ pub mod docker;
 pub mod genesis;
 pub mod k8s_helpers;
 pub mod kubernetes;
+pub mod ledger_helper;
 pub mod release;
 pub mod startup_scripts;
 pub mod validator;
