@@ -197,8 +197,8 @@ impl<'a> Kubernetes<'a> {
             ..Default::default()
         }]);
 
-        let mut command =
-            vec!["/home/solana/k8s-cluster-scripts/bootstrap-startup-script.sh".to_string()];
+        let command_path = format!("/home/solana/k8s-cluster-scripts/{}-startup-script.sh", ValidatorType::Bootstrap);
+        let mut command = vec![command_path];
         command.extend(self.generate_bootstrap_command_flags());
 
         k8s_helpers::create_replica_set(
