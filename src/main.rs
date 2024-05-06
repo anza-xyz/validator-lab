@@ -567,7 +567,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let replica_set = kub_controller.create_bootstrap_validator_replica_set(
         bootstrap_validator.image(),
         bootstrap_validator.secret().metadata.name.clone(),
-        bootstrap_validator.info_labels(),
+        &bootstrap_validator.all_labels(),
     )?;
     bootstrap_validator.set_replica_set(replica_set);
 
@@ -650,7 +650,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let replica_set = kub_controller.create_validator_replica_set(
             validator.image(),
             validator.secret().metadata.name.clone(),
-            validator.info_labels(),
+            &validator.all_labels(),
             validator_index,
         )?;
         validator.set_replica_set(replica_set);

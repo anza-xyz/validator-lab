@@ -378,7 +378,7 @@ impl<'a> Kubernetes<'a> {
             k8s_helpers::create_environment_variable(
                 "LOAD_BALANCER_RPC_ADDRESS".to_string(),
                 Some(
-                    "bootstrap-and-non-voting-lb-service.$(NAMESPACE).svc.cluster.local:8899"
+                    "bootstrap-and-rpc-node-lb-service.$(NAMESPACE).svc.cluster.local:8899"
                         .to_string(),
                 ),
                 None,
@@ -386,7 +386,7 @@ impl<'a> Kubernetes<'a> {
             k8s_helpers::create_environment_variable(
                 "LOAD_BALANCER_GOSSIP_ADDRESS".to_string(),
                 Some(
-                    "bootstrap-and-non-voting-lb-service.$(NAMESPACE).svc.cluster.local:8001"
+                    "bootstrap-and-rpc-node-lb-service.$(NAMESPACE).svc.cluster.local:8001"
                         .to_string(),
                 ),
                 None,
@@ -394,7 +394,7 @@ impl<'a> Kubernetes<'a> {
             k8s_helpers::create_environment_variable(
                 "LOAD_BALANCER_FAUCET_ADDRESS".to_string(),
                 Some(
-                    "bootstrap-and-non-voting-lb-service.$(NAMESPACE).svc.cluster.local:9900"
+                    "bootstrap-and-rpc-node-lb-service.$(NAMESPACE).svc.cluster.local:9900"
                         .to_string(),
                 ),
                 None,
