@@ -45,7 +45,6 @@ cargo run --bin cluster --
     --num_validators <number-of-non-bootstrap-voting-validators>
     # genesis config. Optional: Many of these have defaults
     --hashes-per-tick <hashes-per-tick>
-    --enable-warmup-epochs <true|false>
     --faucet-lamports <faucet-lamports>
     --bootstrap-validator-sol <validator-sol>
     --bootstrap-validator-stake-sol <validator-stake>

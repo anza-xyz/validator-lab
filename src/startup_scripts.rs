@@ -29,8 +29,6 @@ nohup solana-faucet --keypair bootstrap-accounts/faucet.json &
 # shellcheck disable=SC1091
 source /home/solana/k8s-cluster-scripts/common.sh
 
-program="agave-validator"
-
 no_restart=0
 
 # Define the paths to the validator cli. pre 1.18 is `solana-validator`. post 1.18 is `agave-validator`

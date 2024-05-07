@@ -109,9 +109,9 @@ fn parse_matches() -> clap::ArgMatches {
                 .help("Override the default 500000000000000000 lamports minted in genesis"),
         )
         .arg(
-            Arg::with_name("enable_warmup_epochs")
-                .long("enable-warmup-epochs")
-                .help("Genesis config. enable warmup epoch. defaults to true"),
+            Arg::with_name("disable_warmup_epochs")
+                .long("disable-warmup-epochs")
+                .help("Genesis config. disable warmup epochs"),
         )
         .arg(
             Arg::with_name("max_genesis_archive_unpacked_size")
@@ -368,7 +368,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .parse()
                 .expect("Invalid value for faucet_lamports")
         }),
-        enable_warmup_epochs: matches.is_present("enable_warmup_epochs"),
+        enable_warmup_epochs: !matches.is_present("disable_warmup_epochs"),
         max_genesis_archive_unpacked_size: matches
             .value_of("max_genesis_archive_unpacked_size")
             .map(|value_str| {
