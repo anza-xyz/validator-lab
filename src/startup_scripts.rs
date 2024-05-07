@@ -636,7 +636,7 @@ done
         r#"#!/bin/bash
 set -e
 
-nohup solana-faucet --keypair non-voting-validator-accounts/faucet.json &
+nohup solana-faucet --keypair rpc-node-accounts/faucet.json &
 
 # Start Validator
 # shellcheck disable=SC1091
@@ -650,7 +650,7 @@ args=(
 )
 airdrops_enabled=1
 node_sol=500 # 500 SOL: number of SOL to airdrop the node for transaction fees and vote account rent exemption (ignored if airdrops_enabled=0)
-identity=non-voting-validator-accounts/identity.json
+identity=rpc-node-accounts/identity.json
 no_restart=0
 gossip_entrypoint=$BOOTSTRAP_GOSSIP_ADDRESS
 ledger_dir=/home/solana/ledger

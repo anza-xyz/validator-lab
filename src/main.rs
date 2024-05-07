@@ -646,6 +646,48 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             rpc_node.set_secret(rpc_secret);
             kub_controller.deploy_secret(rpc_node.secret()).await?;
             info!("Deployed RPC node {rpc_index} Secret");
+
+            let identity_path =
+                config_directory.join(format!("rpc-node-identity-{rpc_index}.json"));
+            let rpc_keypair =
+                read_keypair_file(identity_path).expect("Failed to read rpc-node keypair file");
+
+            rpc_node.add_label(
+                "rpc-node/name",
+                &format!("rpc-node-{rpc_index}"),
+                LabelType::Service,
+            );
+
+            rpc_node.add_label(
+                "rpc-node/type",
+                rpc_node.validator_type().to_string(),
+                LabelType::Info,
+            );
+
+            rpc_node.add_label(
+                "rpc-node/identity",
+                rpc_keypair.pubkey().to_string(),
+                LabelType::Info,
+            );
+
+            rpc_node.add_label(
+                "load-balancer/name",
+                "load-balancer-selector",
+                LabelType::Service,
+            );
+
+            let replica_set = kub_controller.create_rpc_replica_set(
+                rpc_node.image(),
+                rpc_node.secret().metadata.name.clone(),
+                &rpc_node.all_labels(),
+                rpc_index,
+            )?;
+            rpc_node.set_replica_set(replica_set);
+
+            kub_controller
+                .deploy_replicas_set(rpc_node.replica_set())
+                .await?;
+            info!("rpc replica set ({rpc_index}) deployed successfully");
         }
     }
 

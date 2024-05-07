@@ -28,12 +28,12 @@
 - [ ] Create & Deploy Selector
     - [x] Bootstrap
     - [x] Validator (regular)
-    - [ ] RPC nodes
+    - [x] RPC nodes
     - [ ] Client
 - [ ] Create & Deploy Replica Set
     - [x] Bootstrap
     - [x] Validator (regular)
-    - [ ] RPC nodes
+    - [x] RPC nodes
     - [ ] Client
 - [ ] Create & Deploy Services
     - [x] Bootstrap
