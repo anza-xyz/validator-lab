@@ -73,8 +73,8 @@ impl DockerConfig {
     ) -> Result<(), Box<dyn Error>> {
         let validator_type = docker_image.validator_type();
         match validator_type {
-            ValidatorType::Bootstrap | ValidatorType::Standard => (),
-            ValidatorType::RPC | ValidatorType::Client => {
+            ValidatorType::Bootstrap | ValidatorType::Standard | ValidatorType::RPC => (),
+            ValidatorType::Client => {
                 return Err(format!(
                     "Build docker image for validator type: {validator_type} not supported yet"
                 )
@@ -157,7 +157,7 @@ impl DockerConfig {
         fs::create_dir_all(docker_path)?;
 
         match validator_type {
-            ValidatorType::Bootstrap | ValidatorType::Standard => {
+            ValidatorType::Bootstrap | ValidatorType::Standard | ValidatorType::RPC => {
                 let file_name = format!("{validator_type}-startup-script.sh");
                 Self::write_startup_script_to_docker_directory(
                     &file_name,
@@ -169,7 +169,7 @@ impl DockerConfig {
                     &docker_path.join("common.sh"),
                 )?;
             }
-            ValidatorType::RPC | ValidatorType::Client => todo!(),
+            ValidatorType::Client => todo!(),
         }
 
         let startup_script_directory = format!("./docker-build/{validator_type}");

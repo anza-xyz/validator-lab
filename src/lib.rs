@@ -61,6 +61,7 @@ impl ValidatorType {
         match self {
             ValidatorType::Bootstrap => Ok(startup_scripts::StartupScripts::bootstrap()),
             ValidatorType::Standard => Ok(startup_scripts::StartupScripts::validator()),
+            ValidatorType::RPC => Ok(startup_scripts::StartupScripts::rpc()),
             _ => Err(format!("ValidatorType {:?} not supported!", self).into()),
         }
     }

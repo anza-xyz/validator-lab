@@ -149,6 +149,30 @@ impl<'a> Kubernetes<'a> {
         k8s_helpers::create_secret(secret_name.to_string(), secrets)
     }
 
+    pub fn create_rpc_secret(
+        &self,
+        rpc_index: usize,
+        config_dir: &Path,
+    ) -> Result<Secret, Box<dyn Error>> {
+        let secret_name = format!("rpc-node-account-secret-{rpc_index}");
+
+        let mut secrets = BTreeMap::new();
+        secrets.insert(
+            "identity".to_string(),
+            SecretType::File {
+                path: config_dir.join(format!("rpc-node-identity-{rpc_index}.json")),
+            },
+        );
+        secrets.insert(
+            "faucet".to_string(),
+            SecretType::File {
+                path: config_dir.join("faucet.json"),
+            },
+        );
+
+        k8s_helpers::create_secret(secret_name, secrets)
+    }
+
     pub fn add_known_validator(&mut self, pubkey: Pubkey) {
         self.validator_config.known_validators.push(pubkey);
         info!("pubkey added to known validators: {:?}", pubkey);

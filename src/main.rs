@@ -524,6 +524,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         cluster_images.set_item(validator, ValidatorType::Standard);
     }
 
+    if num_rpc_nodes > 0 {
+        let rpc_node = Validator::new(DockerImage::new(
+            registry_name.clone(),
+            ValidatorType::RPC,
+            image_name.clone(),
+            image_tag.clone(),
+        ));
+        cluster_images.set_item(rpc_node, ValidatorType::RPC);
+    }
+
     if build_config.docker_build() {
         for v in cluster_images.get_validators() {
             docker.build_image(solana_root.get_root_path(), v.image())?;
@@ -626,6 +636,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             bootstrap_validator.replica_set_name()
         );
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+
+    if num_rpc_nodes > 0 {
+        let rpc_node = cluster_images.rpc()?;
+        // Create and deploy rpc secrets
+        for rpc_index in 0..num_rpc_nodes {
+            let rpc_secret = kub_controller.create_rpc_secret(rpc_index, &config_directory)?;
+            rpc_node.set_secret(rpc_secret);
+            kub_controller.deploy_secret(rpc_node.secret()).await?;
+            info!("Deployed RPC node {rpc_index} Secret");
+        }
     }
 
     if num_validators == 0 {
