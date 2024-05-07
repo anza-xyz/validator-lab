@@ -230,6 +230,18 @@ fn parse_matches() -> clap::ArgMatches {
                 .default_value(&DEFAULT_INTERNAL_NODE_STAKE_SOL.to_string())
                 .help("Amount to stake internal nodes (Sol)."),
         )
+        //RPC config
+        .arg(
+            Arg::with_name("number_of_rpc_nodes")
+                .long("num-rpc-nodes")
+                .takes_value(true)
+                .default_value("0")
+                .help("Number of rpc nodes")
+                .validator(|s| match s.parse::<i32>() {
+                    Ok(n) if n >= 0 => Ok(()),
+                    _ => Err(String::from("number_of_rpc_nodes should be >= 0")),
+                }),
+        )
         // kubernetes config
         .arg(
             Arg::with_name("cpu_requests")
@@ -297,6 +309,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let num_validators = value_t_or_exit!(matches, "number_of_validators", usize);
+    let num_rpc_nodes = value_t_or_exit!(matches, "number_of_rpc_nodes", usize);
 
     let deploy_method = if let Some(local_path) = matches.value_of("local_path") {
         DeployMethod::Local(local_path.to_owned())
@@ -470,6 +483,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // generate standard validator accounts
     genesis.generate_accounts(ValidatorType::Standard, num_validators)?;
     info!("Generated {num_validators} validator account(s)");
+
+    genesis.generate_accounts(ValidatorType::RPC, num_rpc_nodes)?;
+    info!("Generated {num_rpc_nodes} rpc account(s)");
 
     let ledger_dir = config_directory.join("bootstrap-validator");
     let shred_version = LedgerHelper::get_shred_version(&ledger_dir)?;

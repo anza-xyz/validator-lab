@@ -37,7 +37,7 @@
     - [ ] Client
 - [ ] Create & Deploy Services
     - [x] Bootstrap
-    - [ ] Validator (regular)
+    - [x] Validator (regular)
     - [ ] RPC nodes
     - [ ] Client
 - [x] Check Bootstrap is deployed and running
@@ -49,11 +49,11 @@
     - [ ] Client
 - [ ] Create accounts
     - [x] Validator (regular)
-    - [ ] RPC
+    - [x] RPC
     - [ ] Client
 - [ ] Add feature flags to configure:
-    - [ ] Bootstrap
-    - [ ] Validator (regular)
+    - [x] Bootstrap
+    - [x] Validator (regular)
     - [ ] RPC nodes
     - [ ] Client
 

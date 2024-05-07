@@ -80,6 +80,12 @@ cargo run --bin cluster --
 --metrics-password <metrics-password>   # from (1)
 ```
 
+#### RPC Nodes
+You can add in RPC nodes. These sit behind a load balancer. Load balancer distributed loads across all RPC nodes that the bootstrap. Set the number of RPC nodes with:
+```
+--num-rpc-nodes <num-nodes>
+```
+
 
 ## Kubernetes Cheatsheet
 Create namespace:
