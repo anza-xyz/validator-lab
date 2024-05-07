@@ -687,7 +687,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             kub_controller
                 .deploy_replicas_set(rpc_node.replica_set())
                 .await?;
-            info!("rpc replica set ({rpc_index}) deployed successfully");
+            info!("rpc node replica set ({rpc_index}) deployed successfully");
+
+            let rpc_service = kub_controller.create_service(
+                &format!("rpc-node-selector-{rpc_index}"),
+                rpc_node.service_labels(),
+            );
+            kub_controller.deploy_service(&rpc_service).await?;
+            info!("rpc node service ({rpc_index}) deployed successfully");
         }
     }
 

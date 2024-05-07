@@ -925,7 +925,7 @@ while true; do
 
     while true; do
     if [[ -z $pid ]] || ! kill -0 "$pid"; then
-        echo "\############## non voting validator exited, restarting ##############"
+        echo "\############## rpc node validator exited, restarting ##############"
         break
     fi
     sleep 1
