@@ -38,14 +38,14 @@
 - [ ] Create & Deploy Services
     - [x] Bootstrap
     - [x] Validator (regular)
-    - [ ] RPC nodes
+    - [x] RPC nodes
     - [ ] Client
 - [x] Check Bootstrap is deployed and running
 - [x] Build and deploy Load Balancer (sits in front of bootstrap and RPC nodes)
 - [ ] Add metrics
     - [x] Bootstrap
     - [x] Validator (regular)
-    - [ ] RPC nodes
+    - [x] RPC nodes
     - [ ] Client
 - [ ] Create accounts
     - [x] Validator (regular)
@@ -54,7 +54,7 @@
 - [ ] Add feature flags to configure:
     - [x] Bootstrap
     - [x] Validator (regular)
-    - [ ] RPC nodes
+    - [x] RPC nodes
     - [ ] Client
 
 Above, we start with bootstrap, and then we do validators (regular), and then we do RPCs, then Clients

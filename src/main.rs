@@ -640,6 +640,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if num_rpc_nodes > 0 {
         let rpc_node = cluster_images.rpc()?;
+        let mut rpc_nodes = vec![];
         // Create and deploy rpc secrets
         for rpc_index in 0..num_rpc_nodes {
             let rpc_secret = kub_controller.create_rpc_secret(rpc_index, &config_directory)?;
@@ -695,6 +696,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
             kub_controller.deploy_service(&rpc_service).await?;
             info!("rpc node service ({rpc_index}) deployed successfully");
+
+            rpc_nodes.push(rpc_node.replica_set_name().clone());
+        }
+
+        // wait for at least one rpc node to deploy
+        loop {
+            let mut ready = false;
+            for rpc_name in &rpc_nodes {
+                if kub_controller.is_replica_set_ready(rpc_name).await? {
+                    ready = true;
+                    break;
+                }
+            }
+            if ready {
+                break;
+            }
+
+            info!("no rpc nodes ready yet");
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         }
     }
 
