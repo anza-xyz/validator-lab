@@ -18,43 +18,43 @@
 - [x] Docker Build & Push
     - [x] Bootstrap
     - [x] Validator (regular)
-    - [ ] RPC nodes
+    - [x] RPC nodes
     - [ ] Client
 - [ ] Create & Deploy Secrets
     - [x] Bootstrap
     - [x] Validator (regular)
-    - [ ] RPC nodes
+    - [x] RPC nodes
     - [ ] Client
 - [ ] Create & Deploy Selector
     - [x] Bootstrap
     - [x] Validator (regular)
-    - [ ] RPC nodes
+    - [x] RPC nodes
     - [ ] Client
 - [ ] Create & Deploy Replica Set
     - [x] Bootstrap
     - [x] Validator (regular)
-    - [ ] RPC nodes
+    - [x] RPC nodes
     - [ ] Client
 - [ ] Create & Deploy Services
     - [x] Bootstrap
-    - [ ] Validator (regular)
-    - [ ] RPC nodes
+    - [x] Validator (regular)
+    - [x] RPC nodes
     - [ ] Client
 - [x] Check Bootstrap is deployed and running
 - [x] Build and deploy Load Balancer (sits in front of bootstrap and RPC nodes)
 - [ ] Add metrics
     - [x] Bootstrap
     - [x] Validator (regular)
-    - [ ] RPC nodes
+    - [x] RPC nodes
     - [ ] Client
 - [ ] Create accounts
     - [x] Validator (regular)
-    - [ ] RPC
+    - [x] RPC
     - [ ] Client
 - [ ] Add feature flags to configure:
-    - [ ] Bootstrap
-    - [ ] Validator (regular)
-    - [ ] RPC nodes
+    - [x] Bootstrap
+    - [x] Validator (regular)
+    - [x] RPC nodes
     - [ ] Client
 
 Above, we start with bootstrap, and then we do validators (regular), and then we do RPCs, then Clients

@@ -66,6 +66,22 @@ impl Validator {
         &self.service_labels
     }
 
+    pub fn all_labels(&self) -> BTreeMap<String, String> {
+        let mut all_labels = BTreeMap::new();
+
+        // Add all info_labels first; these can be overwritten by service_labels
+        for (key, value) in &self.info_labels {
+            all_labels.insert(key.clone(), value.clone());
+        }
+
+        // Add all service_labels; this will overwrite any duplicate keys from info_labels
+        for (key, value) in &self.service_labels {
+            all_labels.insert(key.clone(), value.clone());
+        }
+
+        all_labels
+    }
+
     pub fn set_secret(&mut self, secret: Secret) {
         self.secret = secret;
     }

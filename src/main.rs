@@ -73,10 +73,10 @@ fn parse_matches() -> clap::ArgMatches {
             Arg::with_name("number_of_validators")
                 .long("num-validators")
                 .takes_value(true)
-                .default_value("1")
+                .default_value("0")
                 .help("Number of validators to deploy")
                 .validator(|s| match s.parse::<i32>() {
-                    Ok(n) if n > 0 => Ok(()),
+                    Ok(n) if n >= 0 => Ok(()),
                     _ => Err(String::from("number_of_validators should be >= 0")),
                 }),
         )
@@ -109,9 +109,9 @@ fn parse_matches() -> clap::ArgMatches {
                 .help("Override the default 500000000000000000 lamports minted in genesis"),
         )
         .arg(
-            Arg::with_name("enable_warmup_epochs")
-                .long("enable-warmup-epochs")
-                .help("Genesis config. enable warmup epoch. defaults to true"),
+            Arg::with_name("disable_warmup_epochs")
+                .long("disable-warmup-epochs")
+                .help("Genesis config. disable warmup epochs"),
         )
         .arg(
             Arg::with_name("max_genesis_archive_unpacked_size")
@@ -230,6 +230,18 @@ fn parse_matches() -> clap::ArgMatches {
                 .default_value(&DEFAULT_INTERNAL_NODE_STAKE_SOL.to_string())
                 .help("Amount to stake internal nodes (Sol)."),
         )
+        //RPC config
+        .arg(
+            Arg::with_name("number_of_rpc_nodes")
+                .long("num-rpc-nodes")
+                .takes_value(true)
+                .default_value("0")
+                .help("Number of rpc nodes")
+                .validator(|s| match s.parse::<i32>() {
+                    Ok(n) if n >= 0 => Ok(()),
+                    _ => Err(String::from("number_of_rpc_nodes should be >= 0")),
+                }),
+        )
         // kubernetes config
         .arg(
             Arg::with_name("cpu_requests")
@@ -297,6 +309,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let num_validators = value_t_or_exit!(matches, "number_of_validators", usize);
+    let num_rpc_nodes = value_t_or_exit!(matches, "number_of_rpc_nodes", usize);
 
     let deploy_method = if let Some(local_path) = matches.value_of("local_path") {
         DeployMethod::Local(local_path.to_owned())
@@ -368,7 +381,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .parse()
                 .expect("Invalid value for faucet_lamports")
         }),
-        enable_warmup_epochs: matches.is_present("enable_warmup_epochs"),
+        enable_warmup_epochs: !matches.is_present("disable_warmup_epochs"),
         max_genesis_archive_unpacked_size: matches
             .value_of("max_genesis_archive_unpacked_size")
             .map(|value_str| {
@@ -471,6 +484,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     genesis.generate_accounts(ValidatorType::Standard, num_validators)?;
     info!("Generated {num_validators} validator account(s)");
 
+    genesis.generate_accounts(ValidatorType::RPC, num_rpc_nodes)?;
+    info!("Generated {num_rpc_nodes} rpc account(s)");
+
     let ledger_dir = config_directory.join("bootstrap-validator");
     let shred_version = LedgerHelper::get_shred_version(&ledger_dir)?;
     kub_controller.set_shred_version(shred_version);
@@ -506,6 +522,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             image_tag.clone(),
         ));
         cluster_images.set_item(validator, ValidatorType::Standard);
+    }
+
+    if num_rpc_nodes > 0 {
+        let rpc_node = Validator::new(DockerImage::new(
+            registry_name.clone(),
+            ValidatorType::RPC,
+            image_name.clone(),
+            image_tag.clone(),
+        ));
+        cluster_images.set_item(rpc_node, ValidatorType::RPC);
     }
 
     if build_config.docker_build() {
@@ -567,7 +593,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let replica_set = kub_controller.create_bootstrap_validator_replica_set(
         bootstrap_validator.image(),
         bootstrap_validator.secret().metadata.name.clone(),
-        bootstrap_validator.info_labels(),
+        &bootstrap_validator.all_labels(),
     )?;
     bootstrap_validator.set_replica_set(replica_set);
 
@@ -612,6 +638,86 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
 
+    if num_rpc_nodes > 0 {
+        let rpc_node = cluster_images.rpc()?;
+        let mut rpc_nodes = vec![];
+        // Create and deploy rpc secrets
+        for rpc_index in 0..num_rpc_nodes {
+            let rpc_secret = kub_controller.create_rpc_secret(rpc_index, &config_directory)?;
+            rpc_node.set_secret(rpc_secret);
+            kub_controller.deploy_secret(rpc_node.secret()).await?;
+            info!("Deployed RPC node {rpc_index} Secret");
+
+            let identity_path =
+                config_directory.join(format!("rpc-node-identity-{rpc_index}.json"));
+            let rpc_keypair =
+                read_keypair_file(identity_path).expect("Failed to read rpc-node keypair file");
+
+            rpc_node.add_label(
+                "rpc-node/name",
+                &format!("rpc-node-{rpc_index}"),
+                LabelType::Service,
+            );
+
+            rpc_node.add_label(
+                "rpc-node/type",
+                rpc_node.validator_type().to_string(),
+                LabelType::Info,
+            );
+
+            rpc_node.add_label(
+                "rpc-node/identity",
+                rpc_keypair.pubkey().to_string(),
+                LabelType::Info,
+            );
+
+            rpc_node.add_label(
+                "load-balancer/name",
+                "load-balancer-selector",
+                LabelType::Service,
+            );
+
+            let replica_set = kub_controller.create_rpc_replica_set(
+                rpc_node.image(),
+                rpc_node.secret().metadata.name.clone(),
+                &rpc_node.all_labels(),
+                rpc_index,
+            )?;
+            rpc_node.set_replica_set(replica_set);
+
+            kub_controller
+                .deploy_replicas_set(rpc_node.replica_set())
+                .await?;
+            info!("rpc node replica set ({rpc_index}) deployed successfully");
+
+            let rpc_service = kub_controller.create_service(
+                &format!("rpc-node-selector-{rpc_index}"),
+                rpc_node.service_labels(),
+            );
+            kub_controller.deploy_service(&rpc_service).await?;
+            info!("rpc node service ({rpc_index}) deployed successfully");
+
+            rpc_nodes.push(rpc_node.replica_set_name().clone());
+        }
+
+        // wait for at least one rpc node to deploy
+        loop {
+            let mut ready = false;
+            for rpc_name in &rpc_nodes {
+                if kub_controller.is_replica_set_ready(rpc_name).await? {
+                    ready = true;
+                    break;
+                }
+            }
+            if ready {
+                break;
+            }
+
+            info!("no rpc nodes ready yet");
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        }
+    }
+
     if num_validators == 0 {
         info!("No validators to deploy. Returning");
         return Ok(());
@@ -650,7 +756,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let replica_set = kub_controller.create_validator_replica_set(
             validator.image(),
             validator.secret().metadata.name.clone(),
-            validator.info_labels(),
+            &validator.all_labels(),
             validator_index,
         )?;
         validator.set_replica_set(replica_set);

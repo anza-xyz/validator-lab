@@ -45,7 +45,6 @@ cargo run --bin cluster --
     --num_validators <number-of-non-bootstrap-voting-validators>
     # genesis config. Optional: Many of these have defaults
     --hashes-per-tick <hashes-per-tick>
-    --enable-warmup-epochs <true|false>
     --faucet-lamports <faucet-lamports>
     --bootstrap-validator-sol <validator-sol>
     --bootstrap-validator-stake-sol <validator-stake>
@@ -79,6 +78,12 @@ cargo run --bin cluster --
 --metrics-db <database-name>            # from (1)
 --metrics-username <metrics-username>   # from (1)
 --metrics-password <metrics-password>   # from (1)
+```
+
+#### RPC Nodes
+You can add in RPC nodes. These sit behind a load balancer. Load balancer distributed loads across all RPC nodes that the bootstrap. Set the number of RPC nodes with:
+```
+--num-rpc-nodes <num-nodes>
 ```
 
 
