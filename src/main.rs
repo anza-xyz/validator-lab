@@ -8,11 +8,13 @@ use {
     std::{fs, path::PathBuf, result::Result},
     strum::VariantNames,
     validator_lab::{
+        client_config::ClientConfig,
         cluster_images::ClusterImages,
         docker::{DockerConfig, DockerImage},
         genesis::{
             Genesis, GenesisFlags, DEFAULT_BOOTSTRAP_NODE_SOL, DEFAULT_BOOTSTRAP_NODE_STAKE_SOL,
-            DEFAULT_FAUCET_LAMPORTS, DEFAULT_INTERNAL_NODE_SOL, DEFAULT_INTERNAL_NODE_STAKE_SOL,
+            DEFAULT_CLIENT_LAMPORTS_PER_SIGNATURE, DEFAULT_FAUCET_LAMPORTS,
+            DEFAULT_INTERNAL_NODE_SOL, DEFAULT_INTERNAL_NODE_STAKE_SOL,
             DEFAULT_MAX_GENESIS_ARCHIVE_UNPACKED_SIZE,
         },
         kubernetes::{Kubernetes, PodRequests},
@@ -242,6 +244,19 @@ fn parse_matches() -> clap::ArgMatches {
                     _ => Err(String::from("number_of_rpc_nodes should be >= 0")),
                 }),
         )
+        // Client Configurations
+        .arg(
+            Arg::with_name("number_of_clients")
+                .long("num-clients")
+                .short('c')
+                .takes_value(true)
+                .default_value("0")
+                .help("Number of clients ")
+                .validator(|s| match s.parse::<i32>() {
+                    Ok(n) if n >= 0 => Ok(()),
+                    _ => Err(String::from("number_of_clients should be >= 0")),
+                }),
+        )
         // kubernetes config
         .arg(
             Arg::with_name("cpu_requests")
@@ -310,6 +325,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let num_validators = value_t_or_exit!(matches, "number_of_validators", usize);
     let num_rpc_nodes = value_t_or_exit!(matches, "number_of_rpc_nodes", usize);
+    let client_config = ClientConfig {
+        num_clients: value_t_or_exit!(matches, "number_of_clients", usize),
+    };
 
     let deploy_method = if let Some(local_path) = matches.value_of("local_path") {
         DeployMethod::Local(local_path.to_owned())
@@ -473,6 +491,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     genesis.generate_accounts(ValidatorType::Bootstrap, 1)?;
     info!("Generated bootstrap account");
+
+    genesis.create_client_accounts(
+        client_config.num_clients,
+        DEFAULT_CLIENT_LAMPORTS_PER_SIGNATURE,
+        &config_directory,
+        &deploy_method,
+        solana_root.get_root_path(),
+    )?;
+    info!("Client accounts created successfully");
 
     // creates genesis and writes to binary file
     genesis

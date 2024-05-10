@@ -100,6 +100,7 @@ impl Metrics {
     }
 }
 
+pub mod client_config;
 pub mod cluster_images;
 pub mod docker;
 pub mod genesis;
@@ -116,6 +117,7 @@ static PACKAGE: Emoji = Emoji("📦 ", "");
 static ROCKET: Emoji = Emoji("🚀 ", "");
 static SUN: Emoji = Emoji("🌞 ", "");
 static TRUCK: Emoji = Emoji("🚚 ", "");
+static WRITING: Emoji = Emoji("🖊️ ", "");
 
 /// Creates a new process bar for processing that will take an unknown amount of time
 pub fn new_spinner_progress_bar() -> ProgressBar {

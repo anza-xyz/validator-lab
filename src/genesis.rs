@@ -1,5 +1,7 @@
 use {
-    crate::{fetch_spl, new_spinner_progress_bar, ValidatorType, SUN},
+    crate::{
+        fetch_spl, new_spinner_progress_bar, release::DeployMethod, ValidatorType, SUN, WRITING,
+    },
     log::*,
     rand::Rng,
     solana_core::gen_keys::GenKeys,
@@ -9,10 +11,10 @@ use {
     },
     std::{
         error::Error,
-        fs::File,
-        io::Read,
+        fs::{File, OpenOptions},
+        io::{self, BufRead, BufWriter, Read, Write},
         path::{Path, PathBuf},
-        process::Command,
+        process::{Child, Command, Stdio},
         result::Result,
     },
 };
@@ -23,6 +25,7 @@ pub const DEFAULT_INTERNAL_NODE_STAKE_SOL: f64 = 10.0;
 pub const DEFAULT_INTERNAL_NODE_SOL: f64 = 100.0;
 pub const DEFAULT_BOOTSTRAP_NODE_STAKE_SOL: f64 = 10.0;
 pub const DEFAULT_BOOTSTRAP_NODE_SOL: f64 = 100.0;
+pub const DEFAULT_CLIENT_LAMPORTS_PER_SIGNATURE: u64 = 42;
 
 fn parse_spl_genesis_file(
     spl_file: &PathBuf,
@@ -90,6 +93,34 @@ impl std::fmt::Display for GenesisFlags {
             self.bootstrap_validator_stake_sol,
         )
     }
+}
+
+fn append_client_accounts_to_file(
+    in_file: &PathBuf,  //bench-tps-i.yml
+    out_file: &PathBuf, //client-accounts.yml
+) -> io::Result<()> {
+    // Open the bench-tps-i.yml file for reading.
+    let input = File::open(in_file)?;
+    let reader = io::BufReader::new(input);
+
+    // Open (or create) client-accounts.yml
+    let output = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(out_file)?;
+    let mut writer = BufWriter::new(output);
+
+    // Enumerate the lines of the input file, starting from 1.
+    for (index, line) in reader.lines().enumerate().map(|(i, l)| (i + 1, l)) {
+        let line = line?;
+
+        // Skip first line since it is a header aka "---" in a yaml
+        if (index as u64) > 1 {
+            writeln!(writer, "{line}")?;
+        }
+    }
+
+    Ok(())
 }
 
 pub struct Genesis {
@@ -177,6 +208,78 @@ impl Genesis {
             write_keypair_file(keypair, outfile)?;
         }
         Ok(())
+    }
+
+    pub fn create_client_accounts(
+        &mut self,
+        number_of_clients: usize,
+        target_lamports_per_signature: u64,
+        config_dir: &Path,
+        deploy_method: &DeployMethod,
+        solana_root_path: &Path,
+    ) -> Result<(), Box<dyn Error>> {
+        if number_of_clients == 0 {
+            return Ok(());
+        }
+        let client_accounts_file = config_dir.join("client-accounts.yml");
+
+        info!("generating {number_of_clients} client accounts...");
+
+        let children: Result<Vec<_>, _> = (0..number_of_clients)
+            .map(|i| {
+                info!("client account: {i}");
+                let mut args = Vec::new();
+                let account_path = config_dir.join(format!("bench-tps-{i}.yml"));
+                args.push("--write-client-keys".to_string());
+                args.push(account_path.into_os_string().into_string().map_err(|err| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("Invalid Unicode data in path: {:?}", err),
+                    )
+                })?);
+                args.push("--target-lamports-per-signature".to_string());
+                args.push(target_lamports_per_signature.to_string());
+
+                let executable_path = if let DeployMethod::ReleaseChannel(_) = deploy_method {
+                    solana_root_path.join("solana-release/bin/solana-bench-tps")
+                } else {
+                    solana_root_path.join("farf/bin/solana-bench-tps")
+                };
+
+                Self::create_client_account(&args, &executable_path)
+            })
+            .collect();
+
+        for child in children? {
+            let output = child.wait_with_output()?;
+            if !output.status.success() {
+                return Err(output.status.to_string().into());
+            }
+        }
+
+        let progress_bar = new_spinner_progress_bar();
+        progress_bar.set_message(format!("{WRITING}Writing client accounts..."));
+        for i in 0..number_of_clients {
+            let account_path = config_dir.join(format!("bench-tps-{i}.yml"));
+            append_client_accounts_to_file(&account_path, &client_accounts_file)?;
+        }
+        progress_bar.finish_and_clear();
+        info!("client-accounts.yml creation for genesis complete");
+
+        Ok(())
+    }
+
+    fn create_client_account(
+        args: &Vec<String>,
+        executable_path: &PathBuf,
+    ) -> Result<Child, Box<dyn Error>> {
+        let child = Command::new(executable_path)
+            .args(args)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()?;
+
+        Ok(child)
     }
 
     fn setup_genesis_flags(&self) -> Result<Vec<String>, Box<dyn Error>> {
