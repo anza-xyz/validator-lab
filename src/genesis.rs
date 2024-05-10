@@ -159,7 +159,7 @@ impl Genesis {
         validator_type: ValidatorType,
         number_of_accounts: usize,
     ) -> Result<(), Box<dyn Error>> {
-        if validator_type == ValidatorType::Client {
+        if let ValidatorType::Client(_) = validator_type {
             return Err("Client valdiator_type in generate_accounts not allowed".into());
         }
 
@@ -172,7 +172,7 @@ impl Genesis {
             ValidatorType::RPC => {
                 vec!["identity"] // no vote or stake account for RPC
             }
-            ValidatorType::Client => panic!("Client type not supported"),
+            ValidatorType::Client(_) => panic!("Client type not supported"),
         };
 
         let total_accounts_to_generate = number_of_accounts * account_types.len();
@@ -201,7 +201,7 @@ impl Genesis {
                 ValidatorType::Standard | ValidatorType::RPC => {
                     format!("{validator_type}-{account}-{account_index}.json")
                 }
-                ValidatorType::Client => panic!("Client type not supported"),
+                ValidatorType::Client(_) => panic!("Client type not supported"),
             };
 
             let outfile = self.config_dir.join(&filename);
@@ -223,7 +223,7 @@ impl Genesis {
         }
         let client_accounts_file = config_dir.join("client-accounts.yml");
 
-        info!("generating {number_of_clients} client accounts...");
+        info!("generating {number_of_clients} client account(s)...");
 
         let children: Result<Vec<_>, _> = (0..number_of_clients)
             .map(|i| {
@@ -359,6 +359,22 @@ impl Genesis {
         if let Some(lamports_per_signature) = self.flags.target_lamports_per_signature {
             args.push("--target-lamports-per-signature".to_string());
             args.push(lamports_per_signature.to_string());
+        }
+
+        if self.config_dir.join("client-accounts.yml").exists() {
+            args.push("--primordial-accounts-file".to_string());
+            args.push(
+                self.config_dir
+                    .join("client-accounts.yml")
+                    .into_os_string()
+                    .into_string()
+                    .map_err(|err| {
+                        std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            format!("Invalid Unicode data in path: {:?}", err),
+                        )
+                    })?,
+            );
         }
 
         Ok(args)

@@ -53,16 +53,16 @@ pub enum ValidatorType {
     #[strum(serialize = "rpc-node")]
     RPC,
     #[strum(serialize = "client")]
-    Client,
+    Client(/* client index */ usize),
 }
 
 impl ValidatorType {
-    fn script(&self) -> Result<&'static str, Box<dyn std::error::Error>> {
+    fn script(&self) -> &'static str {
         match self {
-            ValidatorType::Bootstrap => Ok(startup_scripts::StartupScripts::bootstrap()),
-            ValidatorType::Standard => Ok(startup_scripts::StartupScripts::validator()),
-            ValidatorType::RPC => Ok(startup_scripts::StartupScripts::rpc()),
-            _ => Err(format!("ValidatorType {:?} not supported!", self).into()),
+            ValidatorType::Bootstrap => startup_scripts::StartupScripts::bootstrap(),
+            ValidatorType::Standard => startup_scripts::StartupScripts::validator(),
+            ValidatorType::RPC => startup_scripts::StartupScripts::rpc(),
+            ValidatorType::Client(_) => startup_scripts::StartupScripts::client(),
         }
     }
 }

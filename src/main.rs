@@ -561,14 +561,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         cluster_images.set_item(rpc_node, ValidatorType::RPC);
     }
 
+    for client_index in 0..client_config.num_clients {
+        let client = Validator::new(DockerImage::new(
+            registry_name.clone(),
+            ValidatorType::Client(client_index),
+            image_name.clone(),
+            image_tag.clone(),
+        ));
+        cluster_images.set_item(client, ValidatorType::Client(client_index));
+    }
+
     if build_config.docker_build() {
-        for v in cluster_images.get_validators() {
+        for v in cluster_images.get_all() {
             docker.build_image(solana_root.get_root_path(), v.image())?;
             info!("{} image built successfully", v.validator_type());
         }
 
-        docker.push_images(cluster_images.get_validators())?;
-        info!("Validator images pushed successfully");
+        docker.push_images(cluster_images.get_all())?;
+        info!(
+            "{} docker images pushed successfully",
+            cluster_images.get_all().count()
+        );
     }
 
     // metrics secret create once and use by all pods

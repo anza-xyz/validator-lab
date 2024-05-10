@@ -19,7 +19,7 @@
     - [x] Bootstrap
     - [x] Validator (regular)
     - [x] RPC nodes
-    - [ ] Client
+    - [x] Client
 - [ ] Create & Deploy Secrets
     - [x] Bootstrap
     - [x] Validator (regular)
