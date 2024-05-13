@@ -1,5 +1,6 @@
 use {
     crate::{
+        client_config::ClientConfig,
         docker::DockerImage,
         k8s_helpers::{self, SecretType},
         validator_config::ValidatorConfig,
@@ -44,6 +45,7 @@ pub struct Kubernetes<'a> {
     k8s_client: Client,
     namespace: String,
     validator_config: &'a mut ValidatorConfig,
+    client_config: ClientConfig,
     pod_requests: PodRequests,
     pub metrics: Option<Metrics>,
 }
@@ -52,6 +54,7 @@ impl<'a> Kubernetes<'a> {
     pub async fn new(
         namespace: &str,
         validator_config: &'a mut ValidatorConfig,
+        client_config: ClientConfig,
         pod_requests: PodRequests,
         metrics: Option<Metrics>,
     ) -> Kubernetes<'a> {
@@ -59,6 +62,7 @@ impl<'a> Kubernetes<'a> {
             k8s_client: Client::try_default().await.unwrap(),
             namespace: namespace.to_owned(),
             validator_config,
+            client_config,
             pod_requests,
             metrics,
         }
@@ -292,6 +296,32 @@ impl<'a> Kubernetes<'a> {
     fn generate_bootstrap_command_flags(&self) -> Vec<String> {
         let mut flags: Vec<String> = Vec::new();
         self.generate_command_flags(&mut flags);
+
+        flags
+    }
+
+    fn generate_client_command_flags(&self) -> Vec<String> {
+        let mut flags = vec![];
+
+        flags.push(self.client_config.client_to_run.clone()); //client to run
+        if let Some(bench_tps_args) = &self.client_config.bench_tps_args {
+            flags.push(bench_tps_args.join(" "));
+        }
+
+        flags.push(self.client_config.client_type.clone());
+
+        if let Some(target_node) = self.client_config.target_node {
+            flags.push("--target-node".to_string());
+            flags.push(target_node.to_string());
+        }
+
+        flags.push("--duration".to_string());
+        flags.push(self.client_config.duration.to_string());
+
+        if let Some(num_nodes) = self.client_config.num_nodes {
+            flags.push("--num-nodes".to_string());
+            flags.push(num_nodes.to_string());
+        }
 
         flags
     }
@@ -610,6 +640,52 @@ impl<'a> Kubernetes<'a> {
             accounts_volume_mount,
             self.pod_requests.requests.clone(),
             Some(readiness_probe),
+        )
+    }
+
+    pub fn create_client_replica_set(
+        &mut self,
+        image: &DockerImage,
+        secret_name: Option<String>,
+        label_selector: &BTreeMap<String, String>,
+        client_index: usize,
+    ) -> Result<ReplicaSet, Box<dyn Error>> {
+        let mut env_vars = self.set_non_bootstrap_environment_variables();
+        if self.metrics.is_some() {
+            env_vars.push(self.get_metrics_env_var_secret())
+        }
+        env_vars.append(&mut self.set_load_balancer_environment_variables());
+
+        let accounts_volume = Some(vec![Volume {
+            name: format!("client-accounts-volume-{}", client_index),
+            secret: Some(SecretVolumeSource {
+                secret_name,
+                ..Default::default()
+            }),
+            ..Default::default()
+        }]);
+
+        let accounts_volume_mount = Some(vec![VolumeMount {
+            name: format!("client-accounts-volume-{}", client_index),
+            mount_path: "/home/solana/client-accounts".to_string(),
+            ..Default::default()
+        }]);
+
+        let mut command =
+            vec!["/home/solana/k8s-cluster-scripts/client-startup-script.sh".to_string()];
+        command.extend(self.generate_client_command_flags());
+
+        k8s_helpers::create_replica_set(
+            format!("client-{client_index}"),
+            self.namespace.clone(),
+            label_selector.clone(),
+            image.clone(),
+            env_vars,
+            command.clone(),
+            accounts_volume,
+            accounts_volume_mount,
+            self.pod_requests.requests.clone(),
+            None,
         )
     }
 }

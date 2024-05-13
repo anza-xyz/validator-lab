@@ -281,3 +281,19 @@ pub async fn fetch_spl(solana_root_path: &Path) -> Result<(), Box<dyn std::error
 
     Ok(())
 }
+
+pub fn parse_and_format_bench_tps_args(bench_tps_args: Option<&str>) -> Option<Vec<String>> {
+    bench_tps_args.map(|args| {
+        let mut val_args: Vec<_> = args
+            .split_whitespace()
+            .filter_map(|arg| arg.split_once('='))
+            .flat_map(|(key, value)| vec![format!("--{}", key), value.to_string()])
+            .collect();
+        let flag_args_iter = args
+            .split_whitespace()
+            .filter(|arg| arg.split_once('=').is_none())
+            .map(|flag| format!("--{}", flag));
+        val_args.extend(flag_args_iter);
+        val_args
+    })
+}

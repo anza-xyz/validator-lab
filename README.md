@@ -63,6 +63,12 @@ cargo run --bin cluster --
     # kubernetes config
     --cpu-requests <cores>
     --memory-requests <memory>
+    # deploy with clients
+    -c <num-clients>
+    --client-type <client-type e.g. tpu-client>
+    --client-to-run <type-of-client e.g. bench-tps>
+    --num-nodes <wait-for-N-nodes-to-converge-before-starting-client>
+    --bench-tps-args <bench-tps-args e.g. tx-count=25000>
 ```
 
 ## Metrics
