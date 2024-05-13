@@ -213,6 +213,7 @@ impl Genesis {
     pub fn create_client_accounts(
         &mut self,
         number_of_clients: usize,
+        bench_tps_args: &[String],
         target_lamports_per_signature: u64,
         config_dir: &Path,
         deploy_method: &DeployMethod,
@@ -239,6 +240,10 @@ impl Genesis {
                 })?);
                 args.push("--target-lamports-per-signature".to_string());
                 args.push(target_lamports_per_signature.to_string());
+
+                if !bench_tps_args.is_empty() {
+                    args.extend(bench_tps_args.to_owned());
+                }
 
                 let executable_path = if let DeployMethod::ReleaseChannel(_) = deploy_method {
                     solana_root_path.join("solana-release/bin/solana-bench-tps")

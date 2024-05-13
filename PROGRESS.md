@@ -39,14 +39,14 @@
     - [x] Bootstrap
     - [x] Validator (regular)
     - [x] RPC nodes
-    - [ ] Client
+    - [x] Client
 - [x] Check Bootstrap is deployed and running
 - [x] Build and deploy Load Balancer (sits in front of bootstrap and RPC nodes)
 - [ ] Add metrics
     - [x] Bootstrap
     - [x] Validator (regular)
     - [x] RPC nodes
-    - [ ] Client
+    - [x] Client
 - [ ] Create accounts
     - [x] Validator (regular)
     - [x] RPC
@@ -55,7 +55,7 @@
     - [x] Bootstrap
     - [x] Validator (regular)
     - [x] RPC nodes
-    - [ ] Client
+    - [x] Client
 
 Above, we start with bootstrap, and then we do validators (regular), and then we do RPCs, then Clients
 - By the end of the Bootstrap set of PRs, we can

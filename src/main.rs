@@ -568,6 +568,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     genesis.create_client_accounts(
         client_config.num_clients,
+        &client_config.bench_tps_args,
         DEFAULT_CLIENT_LAMPORTS_PER_SIGNATURE,
         &config_directory,
         &deploy_method,
@@ -805,7 +806,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             info!("rpc node replica set ({rpc_index}) deployed successfully");
 
             let rpc_service = kub_controller.create_service(
-                &format!("rpc-node-selector-{rpc_index}"),
+                &format!("rpc-node-service-{rpc_index}"),
                 rpc_node.service_labels(),
             );
             kub_controller.deploy_service(&rpc_service).await?;
@@ -916,6 +917,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .deploy_replicas_set(client.replica_set())
             .await?;
         info!("client replica set ({client_index}) deployed successfully");
+
+        let client_service = kub_controller.create_service(
+            &format!("client-service-{client_index}"),
+            client.service_labels(),
+        );
+        kub_controller.deploy_service(&client_service).await?;
+        info!("client service ({client_index}) deployed successfully");
     }
 
     Ok(())

@@ -88,8 +88,6 @@ impl DockerConfig {
             }
         };
 
-        info!("docker path: {:?}", docker_path);
-
         self.create_base_image(
             solana_root_path,
             docker_image,
@@ -122,8 +120,6 @@ impl DockerConfig {
             "docker build -t {docker_image} -f {} {context_path}",
             dockerfile.display()
         );
-
-        info!("command: {command}");
 
         let output = Command::new("sh")
             .arg("-c")

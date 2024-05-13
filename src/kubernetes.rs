@@ -304,8 +304,8 @@ impl<'a> Kubernetes<'a> {
         let mut flags = vec![];
 
         flags.push(self.client_config.client_to_run.clone()); //client to run
-        if let Some(bench_tps_args) = &self.client_config.bench_tps_args {
-            flags.push(bench_tps_args.join(" "));
+        if !self.client_config.bench_tps_args.is_empty() {
+            flags.push(self.client_config.bench_tps_args.join(" "));
         }
 
         flags.push(self.client_config.client_type.clone());
