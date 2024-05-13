@@ -87,7 +87,7 @@ cargo run --bin cluster --
 ```
 
 #### RPC Nodes
-You can add in RPC nodes. These sit behind a load balancer. Load balancer distributed loads across all RPC nodes that the bootstrap. Set the number of RPC nodes with:
+You can add in RPC nodes. These sit behind a load balancer. Load balancer distributed loads across all RPC nodes and the bootstrap. Set the number of RPC nodes with:
 ```
 --num-rpc-nodes <num-nodes>
 ```

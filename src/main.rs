@@ -78,10 +78,6 @@ fn parse_matches() -> clap::ArgMatches {
                 .takes_value(true)
                 .default_value("0")
                 .help("Number of validators to deploy")
-                .validator(|s| match s.parse::<i32>() {
-                    Ok(n) if n >= 0 => Ok(()),
-                    _ => Err(String::from("number_of_validators should be >= 0")),
-                }),
         )
         // Genesis Config
         .arg(
@@ -240,10 +236,6 @@ fn parse_matches() -> clap::ArgMatches {
                 .takes_value(true)
                 .default_value("0")
                 .help("Number of rpc nodes")
-                .validator(|s| match s.parse::<i32>() {
-                    Ok(n) if n >= 0 => Ok(()),
-                    _ => Err(String::from("number_of_rpc_nodes should be >= 0")),
-                }),
         )
         // Client Config
         .arg(
@@ -253,10 +245,6 @@ fn parse_matches() -> clap::ArgMatches {
                 .takes_value(true)
                 .default_value("0")
                 .help("Number of clients ")
-                .validator(|s| match s.parse::<i32>() {
-                    Ok(n) if n >= 0 => Ok(()),
-                    _ => Err(String::from("number_of_clients should be >= 0")),
-                }),
         )
         .arg(
             Arg::with_name("client_type")
@@ -574,13 +562,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &deploy_method,
         solana_root.get_root_path(),
     )?;
-    info!("Client accounts created successfully");
+    info!("Client accounts created");
 
     // creates genesis and writes to binary file
     genesis
         .generate(solana_root.get_root_path(), &build_path)
         .await?;
-    info!("Created genesis successfully");
+    info!("Genesis created");
 
     // generate standard validator accounts
     genesis.generate_accounts(ValidatorType::Standard, num_validators)?;
@@ -649,14 +637,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if build_config.docker_build() {
         for v in cluster_images.get_all() {
             docker.build_image(solana_root.get_root_path(), v.image())?;
-            info!("{} image built successfully", v.validator_type());
+            info!("Built {} image", v.validator_type());
         }
 
         docker.push_images(cluster_images.get_all())?;
-        info!(
-            "{} docker images pushed successfully",
-            cluster_images.get_all().count()
-        );
+        info!("Pushed {} docker images", cluster_images.get_all().count());
     }
 
     // metrics secret create once and use by all pods
@@ -673,7 +658,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     kub_controller
         .deploy_secret(bootstrap_validator.secret())
         .await?;
-    info!("Deployed Bootstrap Secret");
+    info!("Bootstrap Secret deployed");
 
     // Create Bootstrap labels
     // Bootstrap needs two labels, one for each service.
@@ -716,10 +701,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     kub_controller
         .deploy_replicas_set(bootstrap_validator.replica_set())
         .await?;
-    info!(
-        "{} deployed successfully",
-        bootstrap_validator.replica_set_name()
-    );
+    info!("{} deployed", bootstrap_validator.replica_set_name());
 
     // create and deploy bootstrap-service
     let bootstrap_service = kub_controller.create_service(
@@ -727,7 +709,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         bootstrap_validator.service_labels(),
     );
     kub_controller.deploy_service(&bootstrap_service).await?;
-    info!("bootstrap validator service deployed successfully");
+    info!("Bootstrap Balidator Service deployed");
 
     // load balancer service. only create one and use for all bootstrap/rpc nodes
     // service selector matches bootstrap selector
@@ -739,7 +721,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     //deploy load balancer
     kub_controller.deploy_service(&load_balancer).await?;
-    info!("load balancer service deployed successfully");
+    info!("Load Balancer Service deployed");
 
     // wait for bootstrap replicaset to deploy
     while !kub_controller
@@ -761,7 +743,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let rpc_secret = kub_controller.create_rpc_secret(rpc_index, &config_directory)?;
             rpc_node.set_secret(rpc_secret);
             kub_controller.deploy_secret(rpc_node.secret()).await?;
-            info!("Deployed RPC node {rpc_index} Secret");
+            info!("RPC Node {rpc_index} Secret deployed");
 
             let identity_path =
                 config_directory.join(format!("rpc-node-identity-{rpc_index}.json"));
@@ -803,32 +785,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             kub_controller
                 .deploy_replicas_set(rpc_node.replica_set())
                 .await?;
-            info!("rpc node replica set ({rpc_index}) deployed successfully");
+            info!("RPC Node Replica Set ({rpc_index}) deployed");
 
             let rpc_service = kub_controller.create_service(
                 &format!("rpc-node-service-{rpc_index}"),
                 rpc_node.service_labels(),
             );
             kub_controller.deploy_service(&rpc_service).await?;
-            info!("rpc node service ({rpc_index}) deployed successfully");
+            info!("RPC Node Service ({rpc_index}) deployed");
 
             rpc_nodes.push(rpc_node.replica_set_name().clone());
         }
 
         // wait for at least one rpc node to deploy
-        loop {
-            let mut ready = false;
+        'outer: loop {
             for rpc_name in &rpc_nodes {
                 if kub_controller.is_replica_set_ready(rpc_name).await? {
-                    ready = true;
-                    break;
+                    break 'outer;
                 }
             }
-            if ready {
-                break;
-            }
 
-            info!("no rpc nodes ready yet");
+            info!("RPC Nodes not ready yet");
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         }
     }
@@ -841,7 +818,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 kub_controller.create_validator_secret(validator_index, &config_directory)?;
             validator.set_secret(validator_secret);
             kub_controller.deploy_secret(validator.secret()).await?;
-            info!("Deployed Validator {validator_index} secret");
+            info!("Validator {validator_index} Secret deployed");
 
             let identity_path =
                 config_directory.join(format!("validator-identity-{validator_index}.json"));
@@ -875,14 +852,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             kub_controller
                 .deploy_replicas_set(validator.replica_set())
                 .await?;
-            info!("validator replica set ({validator_index}) deployed successfully");
+            info!("Validator Replica Set ({validator_index}) deployed");
 
             let validator_service = kub_controller.create_service(
                 &format!("validator-service-{validator_index}"),
                 validator.service_labels(),
             );
             kub_controller.deploy_service(&validator_service).await?;
-            info!("validator service ({validator_index}) deployed successfully");
+            info!("Validator Service ({validator_index}) deployed");
         }
     }
 
@@ -897,11 +874,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         client.set_secret(client_secret);
 
         kub_controller.deploy_secret(client.secret()).await?;
-        info!("Deployed Client {client_index} Secret");
+        info!("Client {client_index} Secret deployed");
 
         client.add_label(
             "client/name",
-            format!("client-{}", client_index),
+            format!("client-{client_index}"),
             LabelType::Service,
         );
 
@@ -916,14 +893,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         kub_controller
             .deploy_replicas_set(client.replica_set())
             .await?;
-        info!("client replica set ({client_index}) deployed successfully");
+        info!("Client Replica Set ({client_index}) deployed");
 
         let client_service = kub_controller.create_service(
             &format!("client-service-{client_index}"),
             client.service_labels(),
         );
         kub_controller.deploy_service(&client_service).await?;
-        info!("client service ({client_index}) deployed successfully");
+        info!("Client Service ({client_index}) deployed");
     }
 
     Ok(())

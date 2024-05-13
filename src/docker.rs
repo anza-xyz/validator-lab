@@ -193,9 +193,9 @@ USER solana
 COPY --chown=solana:solana  {startup_script_directory} /home/solana/k8s-cluster-scripts
 RUN chmod +x /home/solana/k8s-cluster-scripts/*
 COPY --chown=solana:solana ./config-k8s/bootstrap-validator  /home/solana/ledger
-COPY --chown=solana:solana ./{solana_build_directory}/bin/ /home/solana/.cargo/bin/
+COPY --chown=solana:solana ./{solana_build_directory}/bin/ /home/solana/bin/
 COPY --chown=solana:solana ./{solana_build_directory}/version.yml /home/solana/
-ENV PATH="/home/solana/.cargo/bin:${{PATH}}"
+ENV PATH="/home/solana/bin:${{PATH}}"
 
 WORKDIR /home/solana
 "#,
