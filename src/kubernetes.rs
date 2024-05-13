@@ -173,6 +173,32 @@ impl<'a> Kubernetes<'a> {
         k8s_helpers::create_secret(secret_name, secrets)
     }
 
+    pub fn create_client_secret(
+        &self,
+        client_index: usize,
+        config_dir: &Path,
+    ) -> Result<Secret, Box<dyn Error>> {
+        let secret_name = format!("client-accounts-secret-{client_index}");
+        let faucet_key_path = config_dir.join("faucet.json");
+        let identity_key_path = config_dir.join(format!("validator-identity-{}.json", 0));
+
+        let mut secrets = BTreeMap::new();
+        secrets.insert(
+            "faucet".to_string(),
+            SecretType::File {
+                path: faucet_key_path,
+            },
+        );
+        secrets.insert(
+            "identity".to_string(),
+            SecretType::File {
+                path: identity_key_path,
+            },
+        );
+
+        k8s_helpers::create_secret(secret_name, secrets)
+    }
+
     pub fn add_known_validator(&mut self, pubkey: Pubkey) {
         self.validator_config.known_validators.push(pubkey);
         info!("pubkey added to known validators: {:?}", pubkey);

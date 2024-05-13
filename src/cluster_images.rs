@@ -66,6 +66,10 @@ impl ClusterImages {
         self.clients.iter()
     }
 
+    pub fn get_clients_mut(&mut self) -> impl Iterator<Item = &mut Validator> {
+        self.clients.iter_mut()
+    }
+
     pub fn get_all(&self) -> impl Iterator<Item = &Validator> {
         self.get_validators().chain(self.get_clients())
     }

@@ -758,60 +758,71 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    if num_validators == 0 {
-        info!("No validators to deploy. Returning");
-        return Ok(());
+    if num_validators > 0 {
+        let validator = cluster_images.validator()?;
+        for validator_index in 0..num_validators {
+            // Create and deploy validators secrets
+            let validator_secret =
+                kub_controller.create_validator_secret(validator_index, &config_directory)?;
+            validator.set_secret(validator_secret);
+            kub_controller.deploy_secret(validator.secret()).await?;
+            info!("Deployed Validator {validator_index} secret");
+
+            let identity_path =
+                config_directory.join(format!("validator-identity-{validator_index}.json"));
+            let validator_keypair =
+                read_keypair_file(identity_path).expect("Failed to read validator keypair file");
+
+            validator.add_label(
+                "validator/name",
+                &format!("validator-{validator_index}"),
+                LabelType::Service,
+            );
+            validator.add_label(
+                "validator/type",
+                validator.validator_type().to_string(),
+                LabelType::Info,
+            );
+            validator.add_label(
+                "validator/identity",
+                validator_keypair.pubkey().to_string(),
+                LabelType::Info,
+            );
+
+            let replica_set = kub_controller.create_validator_replica_set(
+                validator.image(),
+                validator.secret().metadata.name.clone(),
+                &validator.all_labels(),
+                validator_index,
+            )?;
+            validator.set_replica_set(replica_set);
+
+            kub_controller
+                .deploy_replicas_set(validator.replica_set())
+                .await?;
+            info!("validator replica set ({validator_index}) deployed successfully");
+
+            let validator_service = kub_controller.create_service(
+                &format!("validator-service-{validator_index}"),
+                validator.service_labels(),
+            );
+            kub_controller.deploy_service(&validator_service).await?;
+            info!("validator service ({validator_index}) deployed successfully");
+        }
     }
-    let validator = cluster_images.validator()?;
 
-    for validator_index in 0..num_validators {
-        // Create and deploy validators secrets
-        let validator_secret =
-            kub_controller.create_validator_secret(validator_index, &config_directory)?;
-        validator.set_secret(validator_secret);
-        kub_controller.deploy_secret(validator.secret()).await?;
-        info!("Deployed Validator {validator_index} secret");
+    for client in cluster_images.get_clients_mut() {
+        let client_index = if let ValidatorType::Client(index) = client.validator_type() {
+            *index
+        } else {
+            return Err("Invalid Validator Type in Client".into());
+        };
 
-        let identity_path =
-            config_directory.join(format!("validator-identity-{validator_index}.json"));
-        let validator_keypair =
-            read_keypair_file(identity_path).expect("Failed to read validator keypair file");
+        let client_secret = kub_controller.create_client_secret(client_index, &config_directory)?;
+        client.set_secret(client_secret);
 
-        validator.add_label(
-            "validator/name",
-            &format!("validator-{validator_index}"),
-            LabelType::Service,
-        );
-        validator.add_label(
-            "validator/type",
-            validator.validator_type().to_string(),
-            LabelType::Info,
-        );
-        validator.add_label(
-            "validator/identity",
-            validator_keypair.pubkey().to_string(),
-            LabelType::Info,
-        );
-
-        let replica_set = kub_controller.create_validator_replica_set(
-            validator.image(),
-            validator.secret().metadata.name.clone(),
-            &validator.all_labels(),
-            validator_index,
-        )?;
-        validator.set_replica_set(replica_set);
-
-        kub_controller
-            .deploy_replicas_set(validator.replica_set())
-            .await?;
-        info!("validator replica set ({validator_index}) deployed successfully");
-
-        let validator_service = kub_controller.create_service(
-            &format!("validator-service-{validator_index}"),
-            validator.service_labels(),
-        );
-        kub_controller.deploy_service(&validator_service).await?;
-        info!("validator service ({validator_index}) deployed successfully");
+        kub_controller.deploy_secret(client.secret()).await?;
+        info!("Deployed Client {client_index} Secret");
     }
 
     Ok(())
