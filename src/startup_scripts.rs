@@ -1024,6 +1024,8 @@ bench-tps)
 
   if ${RPC_CLIENT}; then
     args+=(--use-rpc-client)
+  else
+    args+=(--use-tpu-client)
   fi
 
   entrypointIp="${BOOTSTRAP_GOSSIP_ADDRESS:0:-5}"
