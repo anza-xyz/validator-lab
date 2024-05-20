@@ -32,8 +32,8 @@ source /home/solana/k8s-cluster-scripts/common.sh
 no_restart=0
 
 # Define the paths to the validator cli. pre 1.18 is `solana-validator`. post 1.18 is `agave-validator`
-agave_validator="/home/solana/bin/agave-validator"
-solana_validator="/home/solana/bin/solana-validator"
+agave_validator="/home/solana/.cargo/bin/agave-validator"
+solana_validator="/home/solana/.cargo/bin/solana-validator"
 
 # Initialize program variable
 program=""
@@ -238,8 +238,8 @@ ledger_dir=/home/solana/ledger
 faucet_address=$LOAD_BALANCER_FAUCET_ADDRESS
 
 # Define the paths to the validator cli. pre 1.18 is `solana-validator`. post 1.18 is `agave-validator`
-agave_validator="/home/solana/bin/agave-validator"
-solana_validator="/home/solana/bin/solana-validator"
+agave_validator="/home/solana/.cargo/bin/agave-validator"
+solana_validator="/home/solana/.cargo/bin/solana-validator"
 
 # Initialize program variable
 program=""
@@ -658,8 +658,8 @@ ledger_dir=/home/solana/ledger
 faucet_address=$LOAD_BALANCER_FAUCET_ADDRESS
 
 # Define the paths to the validator cli. pre 1.18 is `solana-validator`. post 1.18 is `agave-validator`
-agave_validator="/home/solana/bin/agave-validator"
-solana_validator="/home/solana/bin/solana-validator"
+agave_validator="/home/solana/.cargo/bin/agave-validator"
+solana_validator="/home/solana/.cargo/bin/solana-validator"
 
 # Initialize program variable
 program=""
@@ -998,13 +998,6 @@ missing() {
   exit 1
 }
 
-threadCount=$(nproc)
-if [[ $threadCount -gt 4 ]]; then
-  threadCount=4
-fi
-
-echo "threadCount: $threadCount"
-
 RPC_CLIENT=false
 case "$clientType" in
   tpu-client)
@@ -1037,7 +1030,6 @@ bench-tps)
   clientCommand="\
     solana-bench-tps \
       --sustained \
-      --threads $threadCount \
       $benchTpsExtraArgs \
       --read-client-keys ./client-accounts.yml \
       --url "http://$url"

@@ -135,7 +135,6 @@ impl DockerConfig {
             return Err(output.status.to_string().into());
         }
         progress_bar.finish_and_clear();
-        info!("{validator_type} image build complete");
 
         Ok(())
     }
@@ -193,18 +192,15 @@ USER solana
 COPY --chown=solana:solana  {startup_script_directory} /home/solana/k8s-cluster-scripts
 RUN chmod +x /home/solana/k8s-cluster-scripts/*
 COPY --chown=solana:solana ./config-k8s/bootstrap-validator  /home/solana/ledger
-COPY --chown=solana:solana ./{solana_build_directory}/bin/ /home/solana/bin/
+COPY --chown=solana:solana ./{solana_build_directory}/bin/ /home/solana/.cargo/bin/
 COPY --chown=solana:solana ./{solana_build_directory}/version.yml /home/solana/
-ENV PATH="/home/solana/bin:${{PATH}}"
+ENV PATH="/home/solana/.cargo/bin:${{PATH}}"
 
 WORKDIR /home/solana
+{}
 "#,
-            self.base_image
-        );
-
-        let dockerfile = format!(
-            "{dockerfile}\n{}",
-            self.insert_client_accounts_if_present(solana_root_path, validator_type)?,
+            self.base_image,
+            self.insert_client_accounts_if_present(solana_root_path, validator_type)?
         );
 
         debug!("dockerfile: {dockerfile:?}");
@@ -228,10 +224,10 @@ WORKDIR /home/solana
                     Ok(format!(
                         r#"
 COPY --chown=solana:solana ./config-k8s/bench-tps-{index}.yml /home/solana/client-accounts.yml
-                    "#,
+                    "#
                     ))
                 } else {
-                    Err(format!("{:?} does not exist!", bench_tps_path).into())
+                    Err(format!("{bench_tps_path:?} does not exist!").into())
                 }
             }
             ValidatorType::Bootstrap => {
@@ -242,7 +238,7 @@ COPY --chown=solana:solana ./config-k8s/client-accounts.yml /home/solana
                     "#
                     .to_string())
                 } else {
-                    Err(format!("{:?} does not exist!", client_accounts_path).into())
+                    Ok("".to_string())
                 }
             }
             ValidatorType::Standard | ValidatorType::RPC => Ok("".to_string()),

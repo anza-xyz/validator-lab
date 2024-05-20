@@ -9,7 +9,7 @@ edition = "2021"
 
 [dependencies]
 bzip2 = "0.4.4"
-clap = { version = "3.2.22", features = ["cargo"] } 
+clap = { version = "3.2.22", features = ["cargo"] }
 console = "0.15.8"
 git2 = "0.18.3"
 indicatif = "0.17.8"
@@ -20,6 +20,7 @@ rand = "0.8.5"
 reqwest = { version = "0.11.23", features = ["blocking", "brotli", "deflate", "gzip", "rustls-tls", "json"] }
 rustls = { version = "0.21.11", default-features = false, features = ["quic"] }
 solana-accounts-db = "1.18.8"
+solana-clap-v3-utils = "1.18.8"
 solana-core = "1.18.8"
 solana-ledger = "1.18.8"
 solana-logger = "1.18.8"

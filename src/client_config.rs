@@ -6,7 +6,7 @@ pub struct ClientConfig {
     pub client_type: String,
     pub client_to_run: String,
     pub bench_tps_args: Vec<String>,
-    pub target_node: Option<Pubkey>,
-    pub duration: u64,
-    pub num_nodes: Option<u64>,
+    pub client_target_node: Option<Pubkey>,
+    pub client_duration_seconds: u64,
+    pub client_wait_for_n_nodes: Option<u64>,
 }

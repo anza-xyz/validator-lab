@@ -310,15 +310,15 @@ impl<'a> Kubernetes<'a> {
 
         flags.push(self.client_config.client_type.clone());
 
-        if let Some(target_node) = self.client_config.target_node {
+        if let Some(target_node) = self.client_config.client_target_node {
             flags.push("--target-node".to_string());
             flags.push(target_node.to_string());
         }
 
         flags.push("--duration".to_string());
-        flags.push(self.client_config.duration.to_string());
+        flags.push(self.client_config.client_duration_seconds.to_string());
 
-        if let Some(num_nodes) = self.client_config.num_nodes {
+        if let Some(num_nodes) = self.client_config.client_wait_for_n_nodes {
             flags.push("--num-nodes".to_string());
             flags.push(num_nodes.to_string());
         }

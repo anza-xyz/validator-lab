@@ -1,10 +1,11 @@
 use {
     clap::{command, value_t_or_exit, Arg, ArgGroup},
     log::*,
+    solana_clap_v3_utils::input_parsers::pubkey_of,
     solana_ledger::blockstore_cleanup_service::{
         DEFAULT_MAX_LEDGER_SHREDS, DEFAULT_MIN_MAX_LEDGER_SHREDS,
     },
-    solana_sdk::{pubkey::Pubkey, signature::keypair::read_keypair_file, signer::Signer},
+    solana_sdk::{signature::keypair::read_keypair_file, signer::Signer},
     std::{fs, path::PathBuf, result::Result},
     strum::VariantNames,
     validator_lab::{
@@ -244,7 +245,7 @@ fn parse_matches() -> clap::ArgMatches {
                 .short('c')
                 .takes_value(true)
                 .default_value("0")
-                .help("Number of clients ")
+                .help("Number of clients")
         )
         .arg(
             Arg::with_name("client_type")
@@ -278,25 +279,28 @@ fn parse_matches() -> clap::ArgMatches {
                 to the bench-tps client."),
         )
         .arg(
-            Arg::with_name("target_node")
-                .long("target-node")
+            Arg::with_name("client_target_node")
+                .long("client-target-node")
                 .takes_value(true)
-                .help("Client Config. Optional: Specify an exact node to send transactions to. use: --target-node <Pubkey>.
+                .value_name("PUBKEY")
+                .help("Client Config. Optional: Specify an exact node to send transactions to
                 Not supported yet. TODO..."),
         )
         .arg(
-            Arg::with_name("duration")
-                .long("duration")
+            Arg::with_name("client_duration_seconds")
+                .long("client-duration-seconds")
                 .takes_value(true)
                 .default_value("7500")
-                .help("Client Config. Seconds to run benchmark, then exit; default is forever use: --duration <SECS>"),
+                .value_name("SECS")
+                .help("Client Config. Seconds to run benchmark, then exit"),
         )
         .arg(
-            Arg::with_name("num_nodes")
-                .long("num-nodes")
+            Arg::with_name("client_wait_for_n_nodes")
+                .long("client-wait-for-n-nodes")
                 .short('N')
                 .takes_value(true)
-                .help("Client Config. Optional: Wait for NUM nodes to converge: --num-nodes <NUM> "),
+                .value_name("NUM")
+                .help("Client Config. Optional: Wait for NUM nodes to converge"),
         )
         // kubernetes config
         .arg(
@@ -368,26 +372,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let num_rpc_nodes = value_t_or_exit!(matches, "number_of_rpc_nodes", usize);
     let client_config = ClientConfig {
         num_clients: value_t_or_exit!(matches, "number_of_clients", usize),
-        client_type: matches
-            .value_of("client_type")
-            .unwrap_or_default()
-            .to_string(),
-        client_to_run: matches
-            .value_of("client_to_run")
-            .unwrap_or_default()
-            .to_string(),
+        client_type: matches.value_of("client_type").unwrap().to_string(),
+        client_to_run: matches.value_of("client_to_run").unwrap().to_string(),
         bench_tps_args: parse_and_format_bench_tps_args(matches.value_of("bench_tps_args")),
-        target_node: match matches.value_of("target_node") {
-            Some(s) => match s.parse::<Pubkey>() {
-                Ok(pubkey) => Some(pubkey),
-                Err(e) => return Err(format!("failed to parse pubkey in target_node: {e}").into()),
-            },
-            None => None,
-        },
-        duration: value_t_or_exit!(matches, "duration", u64),
-        num_nodes: matches
-            .value_of("num_nodes")
-            .map(|value_str| value_str.parse().expect("Invalid value for num_nodes")),
+        client_target_node: pubkey_of(&matches, "client_target_node"),
+        client_duration_seconds: value_t_or_exit!(matches, "client_duration_seconds", u64),
+        client_wait_for_n_nodes: matches
+            .value_of("client_wait_for_n_nodes")
+            .map(|value_str| {
+                value_str
+                    .parse()
+                    .expect("Invalid value for client_wait_for_n_nodes")
+            }),
     };
 
     let deploy_method = if let Some(local_path) = matches.value_of("local_path") {
@@ -543,7 +539,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     build_config.prepare().await?;
-    info!("Validator setup prepared successfully");
+    info!("Setup Validator Environment");
 
     let config_directory = solana_root.get_root_path().join("config-k8s");
     let mut genesis = Genesis::new(config_directory.clone(), genesis_flags);
@@ -580,6 +576,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ledger_dir = config_directory.join("bootstrap-validator");
     let shred_version = LedgerHelper::get_shred_version(&ledger_dir)?;
     kub_controller.set_shred_version(shred_version);
+    info!("Shred Version: {shred_version}");
 
     //unwraps are safe here. since their requirement is enforced by argmatches
     let docker = DockerConfig::new(
@@ -658,7 +655,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     kub_controller
         .deploy_secret(bootstrap_validator.secret())
         .await?;
-    info!("Bootstrap Secret deployed");
+    info!("Deployed Bootstrap Secret");
 
     // Create Bootstrap labels
     // Bootstrap needs two labels, one for each service.
@@ -701,7 +698,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     kub_controller
         .deploy_replicas_set(bootstrap_validator.replica_set())
         .await?;
-    info!("{} deployed", bootstrap_validator.replica_set_name());
+    info!("Deployed {}", bootstrap_validator.replica_set_name());
 
     // create and deploy bootstrap-service
     let bootstrap_service = kub_controller.create_service(
@@ -709,7 +706,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         bootstrap_validator.service_labels(),
     );
     kub_controller.deploy_service(&bootstrap_service).await?;
-    info!("Bootstrap Balidator Service deployed");
+    info!("Deployed Bootstrap Balidator Service");
 
     // load balancer service. only create one and use for all bootstrap/rpc nodes
     // service selector matches bootstrap selector
@@ -721,7 +718,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     //deploy load balancer
     kub_controller.deploy_service(&load_balancer).await?;
-    info!("Load Balancer Service deployed");
+    info!("Deployed Load Balancer Service");
 
     // wait for bootstrap replicaset to deploy
     while !kub_controller
@@ -743,7 +740,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let rpc_secret = kub_controller.create_rpc_secret(rpc_index, &config_directory)?;
             rpc_node.set_secret(rpc_secret);
             kub_controller.deploy_secret(rpc_node.secret()).await?;
-            info!("RPC Node {rpc_index} Secret deployed");
+            info!("Deployed RPC Node {rpc_index} Secret");
 
             let identity_path =
                 config_directory.join(format!("rpc-node-identity-{rpc_index}.json"));
@@ -785,14 +782,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             kub_controller
                 .deploy_replicas_set(rpc_node.replica_set())
                 .await?;
-            info!("RPC Node Replica Set ({rpc_index}) deployed");
+            info!("Deployed RPC Node Replica Set ({rpc_index})");
 
             let rpc_service = kub_controller.create_service(
                 &format!("rpc-node-service-{rpc_index}"),
                 rpc_node.service_labels(),
             );
             kub_controller.deploy_service(&rpc_service).await?;
-            info!("RPC Node Service ({rpc_index}) deployed");
+            info!("Deployed RPC Node Service ({rpc_index})");
 
             rpc_nodes.push(rpc_node.replica_set_name().clone());
         }
@@ -818,7 +815,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 kub_controller.create_validator_secret(validator_index, &config_directory)?;
             validator.set_secret(validator_secret);
             kub_controller.deploy_secret(validator.secret()).await?;
-            info!("Validator {validator_index} Secret deployed");
+            info!("Deployed Validator {validator_index} Secret");
 
             let identity_path =
                 config_directory.join(format!("validator-identity-{validator_index}.json"));
@@ -852,14 +849,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             kub_controller
                 .deploy_replicas_set(validator.replica_set())
                 .await?;
-            info!("Validator Replica Set ({validator_index}) deployed");
+            info!("Deployed Validator Replica Set ({validator_index})");
 
             let validator_service = kub_controller.create_service(
                 &format!("validator-service-{validator_index}"),
                 validator.service_labels(),
             );
             kub_controller.deploy_service(&validator_service).await?;
-            info!("Validator Service ({validator_index}) deployed");
+            info!("Deployed Validator Service ({validator_index})");
         }
     }
 
@@ -874,7 +871,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         client.set_secret(client_secret);
 
         kub_controller.deploy_secret(client.secret()).await?;
-        info!("Client {client_index} Secret deployed");
+        info!("Deployed Client {client_index} Secret");
 
         client.add_label(
             "client/name",
@@ -893,14 +890,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         kub_controller
             .deploy_replicas_set(client.replica_set())
             .await?;
-        info!("Client Replica Set ({client_index}) deployed");
+        info!("Deployed Client Replica Set ({client_index})");
 
         let client_service = kub_controller.create_service(
             &format!("client-service-{client_index}"),
             client.service_labels(),
         );
         kub_controller.deploy_service(&client_service).await?;
-        info!("Client Service ({client_index}) deployed");
+        info!("Deployed Client Service ({client_index})");
     }
 
     Ok(())

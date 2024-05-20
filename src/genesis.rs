@@ -96,28 +96,24 @@ impl std::fmt::Display for GenesisFlags {
 }
 
 fn append_client_accounts_to_file(
-    in_file: &PathBuf,  //bench-tps-i.yml
-    out_file: &PathBuf, //client-accounts.yml
+    bench_tps_account_path: &PathBuf, //bench-tps-i.yml
+    client_accounts_path: &PathBuf,   //client-accounts.yml
 ) -> io::Result<()> {
     // Open the bench-tps-i.yml file for reading.
-    let input = File::open(in_file)?;
+    let input = File::open(bench_tps_account_path)?;
     let reader = io::BufReader::new(input);
 
     // Open (or create) client-accounts.yml
     let output = OpenOptions::new()
         .create(true)
         .append(true)
-        .open(out_file)?;
+        .open(client_accounts_path)?;
     let mut writer = BufWriter::new(output);
 
-    // Enumerate the lines of the input file, starting from 1.
-    for (index, line) in reader.lines().enumerate().map(|(i, l)| (i + 1, l)) {
+    // Skip first line since it is a header aka "---" in a yaml
+    for line in reader.lines().skip(1) {
         let line = line?;
-
-        // Skip first line since it is a header aka "---" in a yaml
-        if (index as u64) > 1 {
-            writeln!(writer, "{line}")?;
-        }
+        writeln!(writer, "{line}")?;
     }
 
     Ok(())
@@ -159,10 +155,6 @@ impl Genesis {
         validator_type: ValidatorType,
         number_of_accounts: usize,
     ) -> Result<(), Box<dyn Error>> {
-        if let ValidatorType::Client(_) = validator_type {
-            return Err("Client valdiator_type in generate_accounts not allowed".into());
-        }
-
         info!("generating {number_of_accounts} {validator_type} accounts...");
 
         let account_types = match validator_type {
@@ -172,7 +164,9 @@ impl Genesis {
             ValidatorType::RPC => {
                 vec!["identity"] // no vote or stake account for RPC
             }
-            ValidatorType::Client(_) => panic!("Client type not supported"),
+            ValidatorType::Client(_) => {
+                return Err("Client valdiator_type in generate_accounts not allowed".into())
+            }
         };
 
         let total_accounts_to_generate = number_of_accounts * account_types.len();
@@ -222,36 +216,23 @@ impl Genesis {
         if number_of_clients == 0 {
             return Ok(());
         }
+
         let client_accounts_file = config_dir.join("client-accounts.yml");
 
-        info!("generating {number_of_clients} client account(s)...");
+        let progress_bar = new_spinner_progress_bar();
+        progress_bar.set_message(format!("{WRITING}Creating and writing client accounts..."));
 
+        info!("generating {number_of_clients} client account(s)...");
         let children: Result<Vec<_>, _> = (0..number_of_clients)
             .map(|i| {
-                info!("client account: {i}");
-                let mut args = Vec::new();
-                let account_path = config_dir.join(format!("bench-tps-{i}.yml"));
-                args.push("--write-client-keys".to_string());
-                args.push(account_path.into_os_string().into_string().map_err(|err| {
-                    std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        format!("Invalid Unicode data in path: {:?}", err),
-                    )
-                })?);
-                args.push("--target-lamports-per-signature".to_string());
-                args.push(target_lamports_per_signature.to_string());
-
-                if !bench_tps_args.is_empty() {
-                    args.extend(bench_tps_args.to_owned());
-                }
-
-                let executable_path = if let DeployMethod::ReleaseChannel(_) = deploy_method {
-                    solana_root_path.join("solana-release/bin/solana-bench-tps")
-                } else {
-                    solana_root_path.join("farf/bin/solana-bench-tps")
-                };
-
-                Self::create_client_account(&args, &executable_path)
+                Self::create_client_account(
+                    i,
+                    config_dir,
+                    target_lamports_per_signature,
+                    bench_tps_args,
+                    deploy_method,
+                    solana_root_path,
+                )
             })
             .collect();
 
@@ -262,8 +243,6 @@ impl Genesis {
             }
         }
 
-        let progress_bar = new_spinner_progress_bar();
-        progress_bar.set_message(format!("{WRITING}Writing client accounts..."));
         for i in 0..number_of_clients {
             let account_path = config_dir.join(format!("bench-tps-{i}.yml"));
             append_client_accounts_to_file(&account_path, &client_accounts_file)?;
@@ -275,9 +254,33 @@ impl Genesis {
     }
 
     fn create_client_account(
-        args: &Vec<String>,
-        executable_path: &PathBuf,
+        client_index: usize,
+        config_dir: &Path,
+        target_lamports_per_signature: u64,
+        bench_tps_args: &[String],
+        deploy_method: &DeployMethod,
+        solana_root_path: &Path,
     ) -> Result<Child, Box<dyn Error>> {
+        info!("client account: {client_index}");
+        let mut args = Vec::new();
+        let account_path = config_dir.join(format!("bench-tps-{client_index}.yml"));
+        args.push("--write-client-keys".to_string());
+        args.push(account_path.into_os_string().into_string().map_err(|err| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Invalid Unicode data in path: {:?}", err),
+            )
+        })?);
+        args.push("--target-lamports-per-signature".to_string());
+        args.push(target_lamports_per_signature.to_string());
+
+        args.extend_from_slice(bench_tps_args);
+
+        let executable_path = if let DeployMethod::ReleaseChannel(_) = deploy_method {
+            solana_root_path.join("solana-release/bin/solana-bench-tps")
+        } else {
+            solana_root_path.join("farf/bin/solana-bench-tps")
+        };
         let child = Command::new(executable_path)
             .args(args)
             .stdout(Stdio::null())
