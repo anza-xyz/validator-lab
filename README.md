@@ -67,7 +67,7 @@ cargo run --bin cluster --
     -c <num-clients>
     --client-type <client-type e.g. tpu-client>
     --client-to-run <type-of-client e.g. bench-tps>
-    --num-nodes <wait-for-N-nodes-to-converge-before-starting-client>
+    --client-wait-for-n-nodes <wait-for-N-nodes-to-converge-before-starting-client>
     --bench-tps-args <bench-tps-args e.g. tx-count=25000>
 ```
 

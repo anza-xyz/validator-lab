@@ -20,38 +20,38 @@
     - [x] Validator (regular)
     - [x] RPC nodes
     - [x] Client
-- [ ] Create & Deploy Secrets
+- [x] Create & Deploy Secrets
     - [x] Bootstrap
     - [x] Validator (regular)
     - [x] RPC nodes
     - [x] Client
-- [ ] Create & Deploy Selector
+- [x] Create & Deploy Selector
     - [x] Bootstrap
     - [x] Validator (regular)
     - [x] RPC nodes
     - [x] Client
-- [ ] Create & Deploy Replica Set
+- [x] Create & Deploy Replica Set
     - [x] Bootstrap
     - [x] Validator (regular)
     - [x] RPC nodes
     - [x] Client
-- [ ] Create & Deploy Services
+- [x] Create & Deploy Services
     - [x] Bootstrap
     - [x] Validator (regular)
     - [x] RPC nodes
     - [x] Client
 - [x] Check Bootstrap is deployed and running
 - [x] Build and deploy Load Balancer (sits in front of bootstrap and RPC nodes)
-- [ ] Add metrics
+- [x] Add metrics
     - [x] Bootstrap
     - [x] Validator (regular)
     - [x] RPC nodes
     - [x] Client
-- [ ] Create accounts
+- [x] Create accounts
     - [x] Validator (regular)
     - [x] RPC
     - [x] Client
-- [ ] Add feature flags to configure:
+- [x] Add feature flags to configure:
     - [x] Bootstrap
     - [x] Validator (regular)
     - [x] RPC nodes
