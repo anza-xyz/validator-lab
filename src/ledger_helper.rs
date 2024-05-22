@@ -1,6 +1,5 @@
 use {
     crate::genesis::DEFAULT_MAX_GENESIS_ARCHIVE_UNPACKED_SIZE,
-    log::*,
     solana_accounts_db::hardened_unpack::open_genesis_config,
     solana_sdk::shred_version::compute_shred_version,
     std::{error::Error, path::Path},
@@ -25,7 +24,6 @@ impl LedgerHelper {
         let genesis_config =
             open_genesis_config(ledger_dir, DEFAULT_MAX_GENESIS_ARCHIVE_UNPACKED_SIZE);
         let shred_version = compute_shred_version(&genesis_config?.hash(), None);
-        info!("Shred Version: {}", shred_version);
         Ok(shred_version)
     }
 }

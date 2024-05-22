@@ -53,16 +53,16 @@ pub enum ValidatorType {
     #[strum(serialize = "rpc-node")]
     RPC,
     #[strum(serialize = "client")]
-    Client,
+    Client(/* client index */ usize),
 }
 
 impl ValidatorType {
-    fn script(&self) -> Result<&'static str, Box<dyn std::error::Error>> {
+    fn script(&self) -> &'static str {
         match self {
-            ValidatorType::Bootstrap => Ok(startup_scripts::StartupScripts::bootstrap()),
-            ValidatorType::Standard => Ok(startup_scripts::StartupScripts::validator()),
-            ValidatorType::RPC => Ok(startup_scripts::StartupScripts::rpc()),
-            _ => Err(format!("ValidatorType {:?} not supported!", self).into()),
+            ValidatorType::Bootstrap => startup_scripts::StartupScripts::bootstrap(),
+            ValidatorType::Standard => startup_scripts::StartupScripts::validator(),
+            ValidatorType::RPC => startup_scripts::StartupScripts::rpc(),
+            ValidatorType::Client(_) => startup_scripts::StartupScripts::client(),
         }
     }
 }
@@ -100,6 +100,7 @@ impl Metrics {
     }
 }
 
+pub mod client_config;
 pub mod cluster_images;
 pub mod docker;
 pub mod genesis;
@@ -116,6 +117,7 @@ static PACKAGE: Emoji = Emoji("📦 ", "");
 static ROCKET: Emoji = Emoji("🚀 ", "");
 static SUN: Emoji = Emoji("🌞 ", "");
 static TRUCK: Emoji = Emoji("🚚 ", "");
+static WRITING: Emoji = Emoji("🖊️ ", "");
 
 /// Creates a new process bar for processing that will take an unknown amount of time
 pub fn new_spinner_progress_bar() -> ProgressBar {
@@ -278,4 +280,24 @@ pub async fn fetch_spl(solana_root_path: &Path) -> Result<(), Box<dyn std::error
     writeln!(file, "{}", genesis_args.join(" "))?;
 
     Ok(())
+}
+
+pub fn parse_and_format_bench_tps_args(bench_tps_args: Option<&str>) -> Vec<String> {
+    if let Some(args) = bench_tps_args {
+        let mut val_args: Vec<_> = args
+            .split_whitespace()
+            .filter_map(|arg| arg.split_once('='))
+            .flat_map(|(key, value)| vec![format!("--{key}"), value.to_string()])
+            .collect();
+
+        let flag_args_iter = args
+            .split_whitespace()
+            .filter(|arg| arg.split_once('=').is_none())
+            .map(|flag| format!("--{flag}"));
+
+        val_args.extend(flag_args_iter);
+        val_args
+    } else {
+        Vec::new() // Return empty vec if no args provided
+    }
 }

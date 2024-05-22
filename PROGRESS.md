@@ -19,43 +19,43 @@
     - [x] Bootstrap
     - [x] Validator (regular)
     - [x] RPC nodes
-    - [ ] Client
-- [ ] Create & Deploy Secrets
+    - [x] Client
+- [x] Create & Deploy Secrets
     - [x] Bootstrap
     - [x] Validator (regular)
     - [x] RPC nodes
-    - [ ] Client
-- [ ] Create & Deploy Selector
+    - [x] Client
+- [x] Create & Deploy Selector
     - [x] Bootstrap
     - [x] Validator (regular)
     - [x] RPC nodes
-    - [ ] Client
-- [ ] Create & Deploy Replica Set
+    - [x] Client
+- [x] Create & Deploy Replica Set
     - [x] Bootstrap
     - [x] Validator (regular)
     - [x] RPC nodes
-    - [ ] Client
-- [ ] Create & Deploy Services
+    - [x] Client
+- [x] Create & Deploy Services
     - [x] Bootstrap
     - [x] Validator (regular)
     - [x] RPC nodes
-    - [ ] Client
+    - [x] Client
 - [x] Check Bootstrap is deployed and running
 - [x] Build and deploy Load Balancer (sits in front of bootstrap and RPC nodes)
-- [ ] Add metrics
+- [x] Add metrics
     - [x] Bootstrap
     - [x] Validator (regular)
     - [x] RPC nodes
-    - [ ] Client
-- [ ] Create accounts
+    - [x] Client
+- [x] Create accounts
     - [x] Validator (regular)
     - [x] RPC
-    - [ ] Client
-- [ ] Add feature flags to configure:
+    - [x] Client
+- [x] Add feature flags to configure:
     - [x] Bootstrap
     - [x] Validator (regular)
     - [x] RPC nodes
-    - [ ] Client
+    - [x] Client
 
 Above, we start with bootstrap, and then we do validators (regular), and then we do RPCs, then Clients
 - By the end of the Bootstrap set of PRs, we can

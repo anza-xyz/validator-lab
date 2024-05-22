@@ -63,6 +63,12 @@ cargo run --bin cluster --
     # kubernetes config
     --cpu-requests <cores>
     --memory-requests <memory>
+    # deploy with clients
+    -c <num-clients>
+    --client-type <client-type e.g. tpu-client>
+    --client-to-run <type-of-client e.g. bench-tps>
+    --client-wait-for-n-nodes <wait-for-N-nodes-to-converge-before-starting-client>
+    --bench-tps-args <bench-tps-args e.g. tx-count=25000>
 ```
 
 ## Metrics
@@ -81,7 +87,7 @@ cargo run --bin cluster --
 ```
 
 #### RPC Nodes
-You can add in RPC nodes. These sit behind a load balancer. Load balancer distributed loads across all RPC nodes that the bootstrap. Set the number of RPC nodes with:
+You can add in RPC nodes. These sit behind a load balancer. Load balancer distributed loads across all RPC nodes and the bootstrap. Set the number of RPC nodes with:
 ```
 --num-rpc-nodes <num-nodes>
 ```

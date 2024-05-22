@@ -45,11 +45,18 @@ impl DockerImage {
 // Put DockerImage in format for building, pushing, and pulling
 impl Display for DockerImage {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{}/{}-{}:{}",
-            self.registry, self.validator_type, self.image_name, self.tag
-        )
+        match self.validator_type {
+            ValidatorType::Client(index) => write!(
+                f,
+                "{}/{}-{}-{}:{}",
+                self.registry, self.validator_type, index, self.image_name, self.tag
+            ),
+            ValidatorType::Bootstrap | ValidatorType::Standard | ValidatorType::RPC => write!(
+                f,
+                "{}/{}-{}:{}",
+                self.registry, self.validator_type, self.image_name, self.tag
+            ),
+        }
     }
 }
 
@@ -72,17 +79,15 @@ impl DockerConfig {
         docker_image: &DockerImage,
     ) -> Result<(), Box<dyn Error>> {
         let validator_type = docker_image.validator_type();
-        match validator_type {
-            ValidatorType::Bootstrap | ValidatorType::Standard | ValidatorType::RPC => (),
-            ValidatorType::Client => {
-                return Err(format!(
-                    "Build docker image for validator type: {validator_type} not supported yet"
-                )
-                .into());
+        let docker_path = match validator_type {
+            ValidatorType::Bootstrap | ValidatorType::Standard | ValidatorType::RPC => {
+                solana_root_path.join(format!("docker-build/{validator_type}"))
             }
-        }
+            ValidatorType::Client(index) => {
+                solana_root_path.join(format!("docker-build/{validator_type}-{index}"))
+            }
+        };
 
-        let docker_path = solana_root_path.join(format!("docker-build/{validator_type}"));
         self.create_base_image(
             solana_root_path,
             docker_image,
@@ -100,7 +105,7 @@ impl DockerConfig {
         docker_path: &PathBuf,
         validator_type: &ValidatorType,
     ) -> Result<(), Box<dyn Error>> {
-        self.create_dockerfile(validator_type, docker_path, None)?;
+        self.create_dockerfile(validator_type, docker_path, solana_root_path, None)?;
 
         // We use std::process::Command here because Docker-rs is very slow building dockerfiles
         // when they are in large repos. Docker-rs doesn't seem to support the `--file` flag natively.
@@ -130,7 +135,6 @@ impl DockerConfig {
             return Err(output.status.to_string().into());
         }
         progress_bar.finish_and_clear();
-        info!("{validator_type} image build complete");
 
         Ok(())
     }
@@ -141,7 +145,7 @@ impl DockerConfig {
         validator_type: &ValidatorType,
     ) -> Result<(), Box<dyn Error>> {
         let script_path = docker_dir.join(file_name);
-        let script_content = validator_type.script()?;
+        let script_content = validator_type.script();
         StartupScripts::write_script_to_file(script_content, &script_path).map_err(|e| e.into())
     }
 
@@ -149,6 +153,7 @@ impl DockerConfig {
         &self,
         validator_type: &ValidatorType,
         docker_path: &PathBuf,
+        solana_root_path: &Path,
         content: Option<&str>,
     ) -> Result<(), Box<dyn Error>> {
         if docker_path.exists() {
@@ -156,23 +161,19 @@ impl DockerConfig {
         }
         fs::create_dir_all(docker_path)?;
 
-        match validator_type {
-            ValidatorType::Bootstrap | ValidatorType::Standard | ValidatorType::RPC => {
-                let file_name = format!("{validator_type}-startup-script.sh");
-                Self::write_startup_script_to_docker_directory(
-                    &file_name,
-                    docker_path,
-                    validator_type,
-                )?;
-                StartupScripts::write_script_to_file(
-                    StartupScripts::common(),
-                    &docker_path.join("common.sh"),
-                )?;
-            }
-            ValidatorType::Client => todo!(),
-        }
+        let file_name = format!("{validator_type}-startup-script.sh");
+        Self::write_startup_script_to_docker_directory(&file_name, docker_path, validator_type)?;
+        StartupScripts::write_script_to_file(
+            StartupScripts::common(),
+            &docker_path.join("common.sh"),
+        )?;
 
-        let startup_script_directory = format!("./docker-build/{validator_type}");
+        let startup_script_directory = match validator_type {
+            ValidatorType::Bootstrap | ValidatorType::Standard | ValidatorType::RPC => {
+                format!("./docker-build/{validator_type}")
+            }
+            ValidatorType::Client(index) => format!("./docker-build/{validator_type}-{index}"),
+        };
         let solana_build_directory = if let DeployMethod::ReleaseChannel(_) = self.deploy_method {
             "solana-release"
         } else {
@@ -191,13 +192,15 @@ USER solana
 COPY --chown=solana:solana  {startup_script_directory} /home/solana/k8s-cluster-scripts
 RUN chmod +x /home/solana/k8s-cluster-scripts/*
 COPY --chown=solana:solana ./config-k8s/bootstrap-validator  /home/solana/ledger
-COPY --chown=solana:solana ./{solana_build_directory}/bin/ /home/solana/.cargo/bin/
+COPY --chown=solana:solana ./{solana_build_directory}/bin/ /home/solana/bin/
 COPY --chown=solana:solana ./{solana_build_directory}/version.yml /home/solana/
-ENV PATH="/home/solana/.cargo/bin:${{PATH}}"
+ENV PATH="/home/solana/bin:${{PATH}}"
 
 WORKDIR /home/solana
+{}
 "#,
-            self.base_image
+            self.base_image,
+            self.insert_client_accounts_if_present(solana_root_path, validator_type)?
         );
 
         debug!("dockerfile: {dockerfile:?}");
@@ -206,6 +209,40 @@ WORKDIR /home/solana
             content.unwrap_or(dockerfile.as_str()),
         )?;
         Ok(())
+    }
+
+    fn insert_client_accounts_if_present(
+        &self,
+        solana_root_path: &Path,
+        validator_type: &ValidatorType,
+    ) -> Result<String, Box<dyn Error>> {
+        match validator_type {
+            ValidatorType::Client(index) => {
+                let bench_tps_path =
+                    solana_root_path.join(format!("config-k8s/bench-tps-{index}.yml"));
+                if bench_tps_path.exists() {
+                    Ok(format!(
+                        r#"
+COPY --chown=solana:solana ./config-k8s/bench-tps-{index}.yml /home/solana/client-accounts.yml
+                    "#
+                    ))
+                } else {
+                    Err(format!("{bench_tps_path:?} does not exist!").into())
+                }
+            }
+            ValidatorType::Bootstrap => {
+                let client_accounts_path = solana_root_path.join("config-k8s/client-accounts.yml");
+                if client_accounts_path.exists() {
+                    Ok(r#"
+COPY --chown=solana:solana ./config-k8s/client-accounts.yml /home/solana
+                    "#
+                    .to_string())
+                } else {
+                    Ok("".to_string())
+                }
+            }
+            ValidatorType::Standard | ValidatorType::RPC => Ok("".to_string()),
+        }
     }
 
     pub fn push_image(docker_image: &DockerImage) -> Result<Child, Box<dyn Error>> {

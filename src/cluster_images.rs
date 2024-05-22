@@ -14,7 +14,7 @@ pub struct ClusterImages {
     bootstrap: Option<Validator>,
     validator: Option<Validator>,
     rpc: Option<Validator>,
-    _clients: Vec<Validator>,
+    clients: Vec<Validator>,
 }
 
 impl ClusterImages {
@@ -23,7 +23,7 @@ impl ClusterImages {
             ValidatorType::Bootstrap => self.bootstrap = Some(item),
             ValidatorType::Standard => self.validator = Some(item),
             ValidatorType::RPC => self.rpc = Some(item),
-            _ => panic!("{validator_type} not implemented yet!"),
+            ValidatorType::Client(_) => self.clients.push(item),
         }
     }
 
@@ -45,11 +45,32 @@ impl ClusterImages {
             .ok_or_else(|| "Validator is not available".into())
     }
 
+    pub fn client(&mut self, client_index: usize) -> Result<&mut Validator, Box<dyn Error>> {
+        if self.clients.is_empty() {
+            return Err("No Clients available".to_string().into());
+        }
+        self.clients
+            .get_mut(client_index)
+            .ok_or_else(|| "Client index out of bounds".to_string().into())
+    }
+
     pub fn get_validators(&self) -> impl Iterator<Item = &Validator> {
         self.bootstrap
             .iter()
             .chain(self.validator.iter())
             .chain(self.rpc.iter())
             .filter_map(Some)
+    }
+
+    pub fn get_clients(&self) -> impl Iterator<Item = &Validator> {
+        self.clients.iter()
+    }
+
+    pub fn get_clients_mut(&mut self) -> impl Iterator<Item = &mut Validator> {
+        self.clients.iter_mut()
+    }
+
+    pub fn get_all(&self) -> impl Iterator<Item = &Validator> {
+        self.get_validators().chain(self.get_clients())
     }
 }
