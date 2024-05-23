@@ -137,11 +137,7 @@ impl BuildConfig {
         std::fs::write(self.solana_root_path.join("farf/version.yml"), content)
             .expect("Failed to write version.yml");
 
-        let label = if let Some(tag) = commit_tag {
-            tag
-        } else {
-            commit.to_string()[..8].to_string()
-        };
+        let label = commit_tag.unwrap_or_else(|| commit.to_string()[..8].to_string());
 
         info!("Build took {:.3?} seconds", start_time.elapsed());
         Ok(label)

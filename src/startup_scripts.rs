@@ -591,6 +591,8 @@ run_delegate_stake() {
     fi
     echo "delegated stake"
   fi
+
+  solana --url $LOAD_BALANCER_RPC_URL --keypair $IDENTITY_FILE stake-account validator-accounts/stake.json
 }
 
 echo "get airdrop and create vote account"
