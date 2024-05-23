@@ -53,7 +53,6 @@ cargo run --bin cluster --
     --slots-per-epoch <slots-per-epoch>
     # docker config
     --registry <docker-registry>        # e.g. gregcusack 
-    --tag <docker-image-tag>            # e.g. v1
     --base-image <base-image>           # e.g. ubuntu:20.04
     --image-name <docker-image-name>    # e.g. cluster-image
     # validator config
