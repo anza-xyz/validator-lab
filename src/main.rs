@@ -50,7 +50,8 @@ fn parse_matches() -> clap::ArgMatches {
                 .takes_value(true)
                 .possible_values(BuildType::VARIANTS)
                 .default_value(BuildType::Release.into())
-                .help("Specifies the build type: skip, debug, or release."),
+                .help("Specifies the build type: skip, debug, or release.
+                Skip -> Will not build release or local repo and will not push to container registry"),
         )
         .arg(
             Arg::with_name("release_channel")
@@ -146,11 +147,6 @@ fn parse_matches() -> clap::ArgMatches {
         )
         //Docker config
         .arg(
-            Arg::with_name("skip_docker_build")
-                .long("skip-docker-build")
-                .help("Skips build Docker images"),
-        )
-        .arg(
             Arg::with_name("registry_name")
                 .long("registry")
                 .takes_value(true)
@@ -161,7 +157,7 @@ fn parse_matches() -> clap::ArgMatches {
             Arg::with_name("image_name")
                 .long("image-name")
                 .takes_value(true)
-                .default_value("k8s-cluster-image")
+                .default_value("k8s-image")
                 .help("Docker image name. Will be prepended with validator_type (bootstrap or validator)"),
         )
         .arg(
@@ -170,13 +166,6 @@ fn parse_matches() -> clap::ArgMatches {
                 .takes_value(true)
                 .default_value("ubuntu:20.04")
                 .help("Docker base image"),
-        )
-        .arg(
-            Arg::with_name("image_tag")
-                .long("tag")
-                .takes_value(true)
-                .default_value("latest")
-                .help("Docker image tag."),
         )
         // Bootstrap/Validator Config
         .arg(
@@ -429,9 +418,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let build_config = BuildConfig::new(
         deploy_method.clone(),
-        build_type,
+        build_type.clone(),
         solana_root.get_root_path(),
-        !matches.is_present("skip_docker_build"),
     );
 
     let genesis_flags = GenesisFlags {
@@ -538,8 +526,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .into());
     }
 
-    build_config.prepare().await?;
-    info!("Setup Validator Environment");
+    let image_tag = build_config.prepare().await?;
+    info!("Setup Validator Environment. Image tag: {image_tag}");
 
     let config_directory = solana_root.get_root_path().join("config-k8s");
     let mut genesis = Genesis::new(config_directory.clone(), genesis_flags);
@@ -586,10 +574,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let registry_name = matches.value_of("registry_name").unwrap().to_string();
     let image_name = matches.value_of("image_name").unwrap().to_string();
-    let image_tag = matches
-        .value_of("image_tag")
-        .unwrap_or_default()
-        .to_string();
 
     let mut cluster_images = ClusterImages::default();
 
@@ -631,7 +615,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         cluster_images.set_item(client, ValidatorType::Client(client_index));
     }
 
-    if build_config.docker_build() {
+    if build_type != BuildType::Skip {
         for v in cluster_images.get_all() {
             docker.build_image(solana_root.get_root_path(), v.image())?;
             info!("Built {} image", v.validator_type());

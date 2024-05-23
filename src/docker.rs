@@ -18,7 +18,7 @@ pub struct DockerImage {
     registry: String,
     validator_type: ValidatorType,
     image_name: String,
-    tag: String,
+    tag: String, // commit (`abcd1234`) or version (`v1.18.12`)
 }
 
 impl DockerImage {

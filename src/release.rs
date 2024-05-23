@@ -17,7 +17,7 @@ pub enum DeployMethod {
     ReleaseChannel(String),
 }
 
-#[derive(PartialEq, EnumString, IntoStaticStr, VariantNames)]
+#[derive(PartialEq, EnumString, IntoStaticStr, VariantNames, Clone)]
 #[strum(serialize_all = "lowercase")]
 pub enum BuildType {
     Skip, // use Agave build from the previous run
@@ -29,7 +29,6 @@ pub struct BuildConfig {
     deploy_method: DeployMethod,
     build_type: BuildType,
     solana_root_path: PathBuf,
-    docker_build: bool,
 }
 
 impl BuildConfig {
@@ -37,43 +36,35 @@ impl BuildConfig {
         deploy_method: DeployMethod,
         build_type: BuildType,
         solana_root_path: &Path,
-        docker_build: bool,
     ) -> Self {
         BuildConfig {
             deploy_method,
             build_type,
             solana_root_path: solana_root_path.to_path_buf(),
-            docker_build,
         }
     }
 
-    pub fn docker_build(&self) -> bool {
-        self.docker_build
-    }
-
-    pub async fn prepare(&self) -> Result<(), Box<dyn Error>> {
-        if self.build_type == BuildType::Skip {
-            info!("skipping build");
-            return Ok(());
-        }
+    pub async fn prepare(&self) -> Result<String, Box<dyn Error>> {
         match &self.deploy_method {
             DeployMethod::ReleaseChannel(channel) => {
+                if self.build_type == BuildType::Skip {
+                    return Ok(channel.clone());
+                }
                 let tar_directory = self.setup_tar_deploy(channel).await?;
                 info!("Successfully setup tar file");
                 cat_file(&tar_directory.join("version.yml"))?;
+                Ok(channel.clone())
             }
             DeployMethod::Local(_) => {
-                self.build()?;
+                let image_tag = self.build()?;
+                Ok(image_tag)
             }
         }
-        info!("Completed Prepare Deploy");
-        Ok(())
     }
 
     async fn setup_tar_deploy(&self, release_channel: &String) -> Result<PathBuf, Box<dyn Error>> {
         let file_name = "solana-release";
         let tar_filename = format!("{file_name}.tar.bz2");
-        info!("tar file: {tar_filename}");
         self.download_release_from_channel(&tar_filename, release_channel)
             .await?;
 
@@ -90,30 +81,32 @@ impl BuildConfig {
         Ok(release_dir)
     }
 
-    fn build(&self) -> Result<(), Box<dyn Error>> {
+    fn build(&self) -> Result<String, Box<dyn Error>> {
         let start_time = Instant::now();
-        let build_variant = if self.build_type == BuildType::Debug {
-            "--debug"
-        } else {
-            ""
-        };
+        if self.build_type != BuildType::Skip {
+            let build_variant = if self.build_type == BuildType::Debug {
+                "--debug"
+            } else {
+                ""
+            };
 
-        let install_directory = self.solana_root_path.join("farf");
-        let install_script = self.solana_root_path.join("scripts/cargo-install-all.sh");
-        match std::process::Command::new(install_script)
-            .arg(install_directory)
-            .arg(build_variant)
-            .arg("--validator-only")
-            .status()
-        {
-            Ok(result) => {
-                if result.success() {
-                    info!("Successfully built validator")
-                } else {
-                    return Err("Failed to build validator".into());
+            let install_directory = self.solana_root_path.join("farf");
+            let install_script = self.solana_root_path.join("scripts/cargo-install-all.sh");
+            match std::process::Command::new(install_script)
+                .arg(install_directory)
+                .arg(build_variant)
+                .arg("--validator-only")
+                .status()
+            {
+                Ok(result) => {
+                    if result.success() {
+                        info!("Successfully built validator")
+                    } else {
+                        return Err("Failed to build validator".into());
+                    }
                 }
+                Err(err) => return Err(Box::new(err)),
             }
-            Err(err) => return Err(Box::new(err)),
         }
 
         let solana_repo = Repository::open(self.solana_root_path.as_path())?;
@@ -126,12 +119,14 @@ impl BuildConfig {
 
         // Check if current commit is associated with a tag
         let mut note = branch;
+        let mut commit_tag = None;
         for tag in (&solana_repo.tag_names(None)?).into_iter().flatten() {
             // Get the target object of the tag
             let tag_object = solana_repo.revparse_single(tag)?.id();
             // Check if the commit associated with the tag is the same as the current commit
             if tag_object == commit {
                 info!("The current commit is associated with tag: {tag}");
+                commit_tag = Some(tag.to_string());
                 note = tag_object.to_string();
                 break;
             }
@@ -142,8 +137,14 @@ impl BuildConfig {
         std::fs::write(self.solana_root_path.join("farf/version.yml"), content)
             .expect("Failed to write version.yml");
 
+        let label = if let Some(tag) = commit_tag {
+            tag
+        } else {
+            commit.to_string()[..8].to_string()
+        };
+
         info!("Build took {:.3?} seconds", start_time.elapsed());
-        Ok(())
+        Ok(label)
     }
 
     async fn download_release_from_channel(
