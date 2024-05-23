@@ -508,12 +508,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
     });
 
+    let image_tag = build_config.prepare().await?.replace('.', "-"); // can't use "." or "_" in k8s names;
+    info!("Setup Validator Environment. Image tag: {image_tag}");
+
     let mut kub_controller = Kubernetes::new(
         environment_config.namespace,
         &mut validator_config,
         client_config.clone(),
         pod_requests,
         metrics,
+        image_tag.clone(),
     )
     .await;
 
@@ -525,9 +529,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .into());
     }
-
-    let image_tag = build_config.prepare().await?;
-    info!("Setup Validator Environment. Image tag: {image_tag}");
 
     let config_directory = solana_root.get_root_path().join("config-k8s");
     let mut genesis = Genesis::new(config_directory.clone(), genesis_flags);
@@ -615,15 +616,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         cluster_images.set_item(client, ValidatorType::Client(client_index));
     }
 
-    if build_type != BuildType::Skip {
-        for v in cluster_images.get_all() {
-            docker.build_image(solana_root.get_root_path(), v.image())?;
-            info!("Built {} image", v.validator_type());
-        }
-
-        docker.push_images(cluster_images.get_all())?;
-        info!("Pushed {} docker images", cluster_images.get_all().count());
+    for v in cluster_images.get_all() {
+        docker.build_image(solana_root.get_root_path(), v.image())?;
+        info!("Built {} image", v.validator_type());
     }
+
+    docker.push_images(cluster_images.get_all())?;
+    info!("Pushed {} docker images", cluster_images.get_all().count());
 
     // metrics secret create once and use by all pods
     if kub_controller.metrics.is_some() {
@@ -685,7 +684,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Deployed {}", bootstrap_validator.replica_set_name());
 
     // create and deploy bootstrap-service
-    let bootstrap_service = kub_controller.create_service(
+    let bootstrap_service = kub_controller.create_bootstrap_service(
         "bootstrap-validator-service",
         bootstrap_validator.service_labels(),
     );
@@ -769,7 +768,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             info!("Deployed RPC Node Replica Set ({rpc_index})");
 
             let rpc_service = kub_controller.create_service(
-                &format!("rpc-node-service-{rpc_index}"),
+                "rpc-node-service",
+                rpc_index,
                 rpc_node.service_labels(),
             );
             kub_controller.deploy_service(&rpc_service).await?;
@@ -836,7 +836,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             info!("Deployed Validator Replica Set ({validator_index})");
 
             let validator_service = kub_controller.create_service(
-                &format!("validator-service-{validator_index}"),
+                "validator-service",
+                validator_index,
                 validator.service_labels(),
             );
             kub_controller.deploy_service(&validator_service).await?;
@@ -876,10 +877,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await?;
         info!("Deployed Client Replica Set ({client_index})");
 
-        let client_service = kub_controller.create_service(
-            &format!("client-service-{client_index}"),
-            client.service_labels(),
-        );
+        let client_service =
+            kub_controller.create_service("client-service", client_index, client.service_labels());
         kub_controller.deploy_service(&client_service).await?;
         info!("Deployed Client Service ({client_index})");
     }

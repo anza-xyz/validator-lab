@@ -40,6 +40,10 @@ impl DockerImage {
     pub fn validator_type(&self) -> ValidatorType {
         self.validator_type
     }
+
+    pub fn tag(&self) -> String {
+        self.tag.clone()
+    }
 }
 
 // Put DockerImage in format for building, pushing, and pulling
