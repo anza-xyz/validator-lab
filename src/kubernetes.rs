@@ -48,6 +48,7 @@ pub struct Kubernetes<'a> {
     client_config: ClientConfig,
     pod_requests: PodRequests,
     pub metrics: Option<Metrics>,
+    deployment_tag: String,
 }
 
 impl<'a> Kubernetes<'a> {
@@ -57,6 +58,7 @@ impl<'a> Kubernetes<'a> {
         client_config: ClientConfig,
         pod_requests: PodRequests,
         metrics: Option<Metrics>,
+        deployment_tag: String,
     ) -> Kubernetes<'a> {
         Self {
             k8s_client: Client::try_default().await.unwrap(),
@@ -65,6 +67,7 @@ impl<'a> Kubernetes<'a> {
             client_config,
             pod_requests,
             metrics,
+            deployment_tag,
         }
     }
 
@@ -89,6 +92,7 @@ impl<'a> Kubernetes<'a> {
         secret_name: &str,
         config_dir: &Path,
     ) -> Result<Secret, Box<dyn Error>> {
+        let secret_name = format!("{secret_name}-{}", self.deployment_tag);
         let faucet_key_path = config_dir.join("faucet.json");
         let identity_key_path = config_dir.join("bootstrap-validator/identity.json");
         let vote_key_path = config_dir.join("bootstrap-validator/vote-account.json");
@@ -128,7 +132,10 @@ impl<'a> Kubernetes<'a> {
         validator_index: usize,
         config_dir: &Path,
     ) -> Result<Secret, Box<dyn Error>> {
-        let secret_name = format!("validator-accounts-secret-{validator_index}");
+        let secret_name = format!(
+            "validator-accounts-secret-{}-{validator_index}",
+            self.deployment_tag
+        );
 
         let mut secrets = BTreeMap::new();
         secrets.insert(
@@ -158,7 +165,10 @@ impl<'a> Kubernetes<'a> {
         rpc_index: usize,
         config_dir: &Path,
     ) -> Result<Secret, Box<dyn Error>> {
-        let secret_name = format!("rpc-node-account-secret-{rpc_index}");
+        let secret_name = format!(
+            "rpc-node-account-secret-{}-{rpc_index}",
+            self.deployment_tag
+        );
 
         let mut secrets = BTreeMap::new();
         secrets.insert(
@@ -182,7 +192,10 @@ impl<'a> Kubernetes<'a> {
         client_index: usize,
         config_dir: &Path,
     ) -> Result<Secret, Box<dyn Error>> {
-        let secret_name = format!("client-accounts-secret-{client_index}");
+        let secret_name = format!(
+            "client-accounts-secret-{}-{client_index}",
+            self.deployment_tag
+        );
         let faucet_key_path = config_dir.join("faucet.json");
         let identity_key_path = config_dir.join(format!("validator-identity-{}.json", 0));
 
@@ -216,7 +229,7 @@ impl<'a> Kubernetes<'a> {
 
     pub fn create_bootstrap_validator_replica_set(
         &mut self,
-        image_name: &DockerImage,
+        image: &DockerImage,
         secret_name: Option<String>,
         label_selector: &BTreeMap<String, String>,
     ) -> Result<ReplicaSet, Box<dyn Error>> {
@@ -259,10 +272,11 @@ impl<'a> Kubernetes<'a> {
         command.extend(self.generate_bootstrap_command_flags());
 
         k8s_helpers::create_replica_set(
-            ValidatorType::Bootstrap.to_string(),
+            format!("{}-{}", image.validator_type(), image.tag()),
+            // ValidatorType::Bootstrap.to_string(),
             self.namespace.clone(),
             label_selector.clone(),
-            image_name.clone(),
+            image.clone(),
             env_vars,
             command.clone(),
             accounts_volume,
@@ -341,13 +355,28 @@ impl<'a> Kubernetes<'a> {
         api.create(&post_params, replica_set).await
     }
 
-    pub fn create_service(
+    // Only one bootstrap, so service can remain named without tag
+    pub fn create_bootstrap_service(
         &self,
         service_name: &str,
         label_selector: &BTreeMap<String, String>,
     ) -> Service {
         k8s_helpers::create_service(
             service_name.to_string(),
+            self.namespace.clone(),
+            label_selector.clone(),
+            false,
+        )
+    }
+
+    pub fn create_service(
+        &self,
+        service_name: &str,
+        index: usize,
+        label_selector: &BTreeMap<String, String>,
+    ) -> Service {
+        k8s_helpers::create_service(
+            format!("{}-{}-{}", service_name, self.deployment_tag, index),
             self.namespace.clone(),
             label_selector.clone(),
             false,
@@ -542,7 +571,12 @@ impl<'a> Kubernetes<'a> {
         command.extend(self.generate_validator_command_flags());
 
         k8s_helpers::create_replica_set(
-            format!("{}-{validator_index}", ValidatorType::Standard),
+            format!(
+                "{}-{}-{}",
+                image.validator_type(),
+                image.tag(),
+                validator_index
+            ),
             self.namespace.clone(),
             label_selector.clone(),
             image.clone(),
@@ -630,7 +664,7 @@ impl<'a> Kubernetes<'a> {
         };
 
         k8s_helpers::create_replica_set(
-            format!("{}-{rpc_index}", ValidatorType::RPC),
+            format!("{}-{}-{}", image.validator_type(), image.tag(), rpc_index),
             self.namespace.clone(),
             label_selector.clone(),
             image.clone(),
@@ -676,7 +710,12 @@ impl<'a> Kubernetes<'a> {
         command.extend(self.generate_client_command_flags());
 
         k8s_helpers::create_replica_set(
-            format!("client-{client_index}"),
+            format!(
+                "{}-{}-{}",
+                image.validator_type(),
+                image.tag(),
+                client_index
+            ),
             self.namespace.clone(),
             label_selector.clone(),
             image.clone(),
