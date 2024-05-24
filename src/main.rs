@@ -9,6 +9,7 @@ use {
     std::{fs, path::PathBuf, result::Result},
     strum::VariantNames,
     validator_lab::{
+        check_directory,
         client_config::ClientConfig,
         cluster_images::ClusterImages,
         docker::{DockerConfig, DockerImage},
@@ -24,7 +25,7 @@ use {
         release::{BuildConfig, BuildType, DeployMethod},
         validator::{LabelType, Validator},
         validator_config::ValidatorConfig,
-        EnvironmentConfig, Metrics, SolanaRoot, ValidatorType,
+        ClusterDataRoot, EnvironmentConfig, Metrics, ValidatorType,
     },
 };
 
@@ -57,7 +58,6 @@ fn parse_matches() -> clap::ArgMatches {
             Arg::with_name("release_channel")
                 .long("release-channel")
                 .takes_value(true)
-                .requires("build_directory")
                 .help("Pulls specific release version. e.g. v1.17.2"),
         )
         .group(
@@ -66,11 +66,11 @@ fn parse_matches() -> clap::ArgMatches {
                 .required(true),
         )
         .arg(
-            Arg::with_name("build_directory")
-                .long("build-dir")
+            Arg::with_name("cluster_data_path")
+                .long("cluster-data-path")
                 .takes_value(true)
-                .conflicts_with("local_path")
-                .help("Absolute path to build directory for release-channel
+                .required(true)
+                .help("Absolute path to cluster_data directory for storing accounts, genesis, etc
                 e.g. /home/sol/validator-lab-build"),
         )
         // non-bootstrap validators
@@ -365,7 +365,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let matches = parse_matches();
     let environment_config = EnvironmentConfig {
         namespace: matches.value_of("cluster_namespace").unwrap_or_default(),
-        build_directory: matches.value_of("build_directory").map(PathBuf::from),
+        cluster_data_path: matches
+            .value_of("cluster_data_path")
+            .map(PathBuf::from)
+            .unwrap(),
     };
 
     let num_validators = value_t_or_exit!(matches, "number_of_validators", usize);
@@ -395,43 +398,52 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         unreachable!("One of --local-path or --release-channel must be provided.");
     };
 
-    let (solana_root, build_path) = match &deploy_method {
-        DeployMethod::Local(path) => {
-            let root = SolanaRoot::new_from_path(path.into());
-            let path = root.get_root_path().join("farf/bin");
-            (root, path)
+    // let cluster_data_root = SolanaRoot::new_from_path(environment_config.cluster_data_path);
+
+    // let (solana_root, build_path) = match &deploy_method {
+    //     DeployMethod::Local(path) => {
+    //         let root = SolanaRoot::new_from_path(path.into());
+    //         let path = root.get_root_path().join("farf/bin");
+    //         (root, path)
+    //     }
+    //     DeployMethod::ReleaseChannel(_) => {
+    //         // unwrap safe since required if release-channel used
+    //         let root =
+    //             SolanaRoot::new_from_path(environment_config.cluster_data_path.clone());
+    //         let path = root.get_root_path().join("solana-release/bin");
+    //         (root, path)
+    //     }
+    // };
+
+    // DeployMethod::Local
+    // - agave_repo_path    ->  /home/sol/solana                // path to solana repo (user-defined)
+    // - cluster_data_root  ->  /home/sol/validator-lab-build/  // path to store all docker, accounts, genesis, etc
+    //      - this is just environment_config.cluster_data_path
+    // - exec_path          ->  <config_path>/bin               // path to store built executables
+    // DeployMethod::ReleaseChannel
+    // - cluster_data_root  ->  /home/sol/validator-lab-build/  // path to store all docker, accounts, genesis, etc
+    //      - this is just environment_config.cluster_data_path
+    // - exec_path          ->  <config_path>/bin               // path to store built executables
+
+    let cluster_data_root = ClusterDataRoot::new_from_path(environment_config.cluster_data_path);
+    check_directory(&cluster_data_root.get_root_path(), "Cluster data root")?;
+    let exec_path = cluster_data_root.get_root_path().join("bin");
+    let agave_repo_path: Option<PathBuf> = match &deploy_method {
+        DeployMethod::Local(agave_path) => {
+            let agave_path: PathBuf = agave_path.into();
+            check_directory(&agave_path, "Agave repo")?;
+            Some(agave_path)
         }
-        DeployMethod::ReleaseChannel(_) => {
-            // unwrap safe since required if release-channel used
-            let root =
-                SolanaRoot::new_from_path(environment_config.build_directory.unwrap().clone());
-            let path = root.get_root_path().join("solana-release/bin");
-            (root, path)
-        }
+        DeployMethod::ReleaseChannel(_) => None,
     };
 
     let build_type: BuildType = matches.value_of_t("build_type").unwrap();
 
-    if let Ok(metadata) = fs::metadata(solana_root.get_root_path()) {
-        if !metadata.is_dir() {
-            return Err(format!(
-                "Build path is not a directory: {}",
-                solana_root.get_root_path().display()
-            )
-            .into());
-        }
-    } else {
-        return Err(format!(
-            "Build directory not found: {}",
-            solana_root.get_root_path().display()
-        )
-        .into());
-    }
-
     let build_config = BuildConfig::new(
         deploy_method.clone(),
         build_type.clone(),
-        solana_root.get_root_path(),
+        cluster_data_root.get_root_path(),
+        agave_repo_path,
     );
 
     let genesis_flags = GenesisFlags {
@@ -523,6 +535,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let image_tag = build_config.prepare().await?.replace('.', "-"); // can't use "." or "_" in k8s names;
     info!("Setup Validator Environment. Image tag: {image_tag}");
 
+    /*
+    WORKS TIL HERE FOR LOCALPATH. INSTALLS BINARIES IN <cluster_data_root>
+    */
+
     let mut kub_controller = Kubernetes::new(
         environment_config.namespace,
         &mut validator_config,
@@ -543,7 +559,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let no_bootstrap = matches.is_present("no_bootstrap");
-    let config_directory = solana_root.get_root_path().join("config-k8s");
+    let config_directory = cluster_data_root.get_root_path().join("config-k8s");
     let retain_previous_genesis = no_bootstrap;
     let mut genesis = Genesis::new(
         config_directory.clone(),
@@ -564,13 +580,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             DEFAULT_CLIENT_LAMPORTS_PER_SIGNATURE,
             &config_directory,
             &deploy_method,
-            solana_root.get_root_path(),
+            cluster_data_root.get_root_path(),
         )?;
         info!("Client accounts created");
 
         // creates genesis and writes to binary file
         genesis
-            .generate(solana_root.get_root_path(), &build_path)
+            .generate(cluster_data_root.get_root_path(), &build_path)
             .await?;
         info!("Genesis created");
     }
@@ -638,7 +654,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     for v in cluster_images.get_all() {
-        docker.build_image(solana_root.get_root_path(), v.image())?;
+        docker.build_image(cluster_data_root.get_root_path(), v.image())?;
         info!("Built {} image", v.validator_type());
     }
 
