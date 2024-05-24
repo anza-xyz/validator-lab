@@ -291,6 +291,17 @@ fn parse_matches() -> clap::ArgMatches {
                 .value_name("NUM")
                 .help("Client Config. Optional: Wait for NUM nodes to converge"),
         )
+        .arg(
+            Arg::with_name("run_client")
+                .long("run-client")
+                .help("Run the client(s)"),
+        )
+        // Heterogeneous Cluster Config
+        .arg(
+            Arg::with_name("no_bootstrap")
+                .long("no-bootstrap")
+                .help("Do not deploy a bootstrap validator. Used when deploying heterogeneous clusters"),
+        )
         // kubernetes config
         .arg(
             Arg::with_name("cpu_requests")
@@ -373,6 +384,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .parse()
                     .expect("Invalid value for client_wait_for_n_nodes")
             }),
+        run_client: matches.is_present("run_client"),
     };
 
     let deploy_method = if let Some(local_path) = matches.value_of("local_path") {
@@ -530,30 +542,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .into());
     }
 
+    let no_bootstrap = matches.is_present("no_bootstrap");
     let config_directory = solana_root.get_root_path().join("config-k8s");
-    let mut genesis = Genesis::new(config_directory.clone(), genesis_flags);
+    let retain_previous_genesis = no_bootstrap;
+    let mut genesis = Genesis::new(
+        config_directory.clone(),
+        genesis_flags,
+        retain_previous_genesis,
+    );
 
-    genesis.generate_faucet()?;
-    info!("Generated faucet account");
+    if !no_bootstrap {
+        genesis.generate_faucet()?;
+        info!("Generated faucet account");
 
-    genesis.generate_accounts(ValidatorType::Bootstrap, 1)?;
-    info!("Generated bootstrap account");
+        genesis.generate_accounts(ValidatorType::Bootstrap, 1)?;
+        info!("Generated bootstrap account");
 
-    genesis.create_client_accounts(
-        client_config.num_clients,
-        &client_config.bench_tps_args,
-        DEFAULT_CLIENT_LAMPORTS_PER_SIGNATURE,
-        &config_directory,
-        &deploy_method,
-        solana_root.get_root_path(),
-    )?;
-    info!("Client accounts created");
+        genesis.create_client_accounts(
+            client_config.num_clients,
+            &client_config.bench_tps_args,
+            DEFAULT_CLIENT_LAMPORTS_PER_SIGNATURE,
+            &config_directory,
+            &deploy_method,
+            solana_root.get_root_path(),
+        )?;
+        info!("Client accounts created");
 
-    // creates genesis and writes to binary file
-    genesis
-        .generate(solana_root.get_root_path(), &build_path)
-        .await?;
-    info!("Genesis created");
+        // creates genesis and writes to binary file
+        genesis
+            .generate(solana_root.get_root_path(), &build_path)
+            .await?;
+        info!("Genesis created");
+    }
 
     // generate standard validator accounts
     genesis.generate_accounts(ValidatorType::Standard, num_validators)?;
@@ -577,14 +597,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let image_name = matches.value_of("image_name").unwrap().to_string();
 
     let mut cluster_images = ClusterImages::default();
-
-    let bootstrap_validator = Validator::new(DockerImage::new(
-        registry_name.clone(),
-        ValidatorType::Bootstrap,
-        image_name.clone(),
-        image_tag.clone(),
-    ));
-    cluster_images.set_item(bootstrap_validator, ValidatorType::Bootstrap);
+    if !no_bootstrap {
+        let bootstrap_validator = Validator::new(DockerImage::new(
+            registry_name.clone(),
+            ValidatorType::Bootstrap,
+            image_name.clone(),
+            image_tag.clone(),
+        ));
+        cluster_images.set_item(bootstrap_validator, ValidatorType::Bootstrap);
+    }
 
     if num_validators > 0 {
         let validator = Validator::new(DockerImage::new(
@@ -625,94 +646,99 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Pushed {} docker images", cluster_images.get_all().count());
 
     // metrics secret create once and use by all pods
-    if kub_controller.metrics.is_some() {
+    // do not redploy this service for heterogeneous clusters
+    if kub_controller.metrics.is_some() && !no_bootstrap {
         let metrics_secret = kub_controller.create_metrics_secret()?;
         kub_controller.deploy_secret(&metrics_secret).await?;
     };
 
-    let bootstrap_validator = cluster_images.bootstrap()?;
-    let secret =
-        kub_controller.create_bootstrap_secret("bootstrap-accounts-secret", &config_directory)?;
-    bootstrap_validator.set_secret(secret);
+    if !no_bootstrap {
+        let bootstrap_validator = cluster_images.bootstrap()?;
+        let secret = kub_controller
+            .create_bootstrap_secret("bootstrap-accounts-secret", &config_directory)?;
+        bootstrap_validator.set_secret(secret);
 
-    kub_controller
-        .deploy_secret(bootstrap_validator.secret())
-        .await?;
-    info!("Deployed Bootstrap Secret");
+        kub_controller
+            .deploy_secret(bootstrap_validator.secret())
+            .await?;
+        info!("Deployed Bootstrap Secret");
 
-    // Create Bootstrap labels
-    // Bootstrap needs two labels, one for each service.
-    // One for Load Balancer, one direct
-    let identity_path = config_directory.join("bootstrap-validator/identity.json");
-    let bootstrap_keypair =
-        read_keypair_file(identity_path).expect("Failed to read bootstrap keypair file");
-    kub_controller.add_known_validator(bootstrap_keypair.pubkey());
+        // Create Bootstrap labels
+        // Bootstrap needs two labels, one for each service.
+        // One for Load Balancer, one direct
+        let identity_path = config_directory.join("bootstrap-validator/identity.json");
+        let bootstrap_keypair =
+            read_keypair_file(identity_path).expect("Failed to read bootstrap keypair file");
+        kub_controller.add_known_validator(bootstrap_keypair.pubkey());
 
-    bootstrap_validator.add_label(
-        "load-balancer/name",
-        "load-balancer-selector",
-        LabelType::Service,
-    );
-    bootstrap_validator.add_label(
-        "service/name",
-        "bootstrap-validator-selector",
-        LabelType::Service,
-    );
-    bootstrap_validator.add_label(
-        "validator/type",
-        bootstrap_validator.validator_type().to_string(),
-        LabelType::Info,
-    );
-    bootstrap_validator.add_label(
-        "validator/identity",
-        bootstrap_keypair.pubkey().to_string(),
-        LabelType::Info,
-    );
-
-    // create bootstrap replica set
-    let replica_set = kub_controller.create_bootstrap_validator_replica_set(
-        bootstrap_validator.image(),
-        bootstrap_validator.secret().metadata.name.clone(),
-        &bootstrap_validator.all_labels(),
-    )?;
-    bootstrap_validator.set_replica_set(replica_set);
-
-    // deploy bootstrap replica set
-    kub_controller
-        .deploy_replicas_set(bootstrap_validator.replica_set())
-        .await?;
-    info!("Deployed {}", bootstrap_validator.replica_set_name());
-
-    // create and deploy bootstrap-service
-    let bootstrap_service = kub_controller.create_bootstrap_service(
-        "bootstrap-validator-service",
-        bootstrap_validator.service_labels(),
-    );
-    kub_controller.deploy_service(&bootstrap_service).await?;
-    info!("Deployed Bootstrap Balidator Service");
-
-    // load balancer service. only create one and use for all bootstrap/rpc nodes
-    // service selector matches bootstrap selector
-    let load_balancer_label =
-        kub_controller.create_selector("load-balancer/name", "load-balancer-selector");
-    //create load balancer
-    let load_balancer = kub_controller
-        .create_validator_load_balancer("bootstrap-and-rpc-node-lb-service", &load_balancer_label);
-
-    //deploy load balancer
-    kub_controller.deploy_service(&load_balancer).await?;
-    info!("Deployed Load Balancer Service");
-
-    // wait for bootstrap replicaset to deploy
-    while !kub_controller
-        .is_replica_set_ready(bootstrap_validator.replica_set_name().as_str())
-        .await?
-    {
-        info!(
-            "replica set: {} not ready...",
-            bootstrap_validator.replica_set_name()
+        bootstrap_validator.add_label(
+            "load-balancer/name",
+            "load-balancer-selector",
+            LabelType::Service,
         );
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        bootstrap_validator.add_label(
+            "service/name",
+            "bootstrap-validator-selector",
+            LabelType::Service,
+        );
+        bootstrap_validator.add_label(
+            "validator/type",
+            bootstrap_validator.validator_type().to_string(),
+            LabelType::Info,
+        );
+        bootstrap_validator.add_label(
+            "validator/identity",
+            bootstrap_keypair.pubkey().to_string(),
+            LabelType::Info,
+        );
+
+        // create bootstrap replica set
+        let replica_set = kub_controller.create_bootstrap_validator_replica_set(
+            bootstrap_validator.image(),
+            bootstrap_validator.secret().metadata.name.clone(),
+            &bootstrap_validator.all_labels(),
+        )?;
+        bootstrap_validator.set_replica_set(replica_set);
+
+        // deploy bootstrap replica set
+        kub_controller
+            .deploy_replicas_set(bootstrap_validator.replica_set())
+            .await?;
+        info!("Deployed {}", bootstrap_validator.replica_set_name());
+
+        // create and deploy bootstrap-service
+        let bootstrap_service = kub_controller.create_bootstrap_service(
+            "bootstrap-validator-service",
+            bootstrap_validator.service_labels(),
+        );
+        kub_controller.deploy_service(&bootstrap_service).await?;
+        info!("Deployed Bootstrap Balidator Service");
+
+        // load balancer service. only create one and use for all bootstrap/rpc nodes
+        // service selector matches bootstrap selector
+        let load_balancer_label =
+            kub_controller.create_selector("load-balancer/name", "load-balancer-selector");
+        //create load balancer
+        let load_balancer = kub_controller.create_validator_load_balancer(
+            "bootstrap-and-rpc-node-lb-service",
+            &load_balancer_label,
+        );
+
+        //deploy load balancer
+        kub_controller.deploy_service(&load_balancer).await?;
+        info!("Deployed Load Balancer Service");
+
+        // wait for bootstrap replicaset to deploy
+        while !kub_controller
+            .is_replica_set_ready(bootstrap_validator.replica_set_name().as_str())
+            .await?
+        {
+            info!(
+                "replica set: {} not ready...",
+                bootstrap_validator.replica_set_name()
+            );
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        }
     }
 
     if num_rpc_nodes > 0 {
@@ -843,6 +869,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             kub_controller.deploy_service(&validator_service).await?;
             info!("Deployed Validator Service ({validator_index})");
         }
+    }
+
+    if !client_config.run_client {
+        if cluster_images.get_clients().count() > 0 {
+            info!("--run-client not set. Clients not deployed");
+        }
+        return Ok(());
     }
 
     for client in cluster_images.get_clients_mut() {

@@ -126,11 +126,15 @@ pub struct Genesis {
 }
 
 impl Genesis {
-    pub fn new(config_dir: PathBuf, flags: GenesisFlags) -> Self {
-        if config_dir.exists() {
-            std::fs::remove_dir_all(&config_dir).unwrap();
+    pub fn new(config_dir: PathBuf, flags: GenesisFlags, retain_previous_genesis: bool) -> Self {
+        // if we are deploying a heterogeneous cluster
+        // all deployments after the first must retain the original genesis directory
+        if !retain_previous_genesis {
+            if config_dir.exists() {
+                std::fs::remove_dir_all(&config_dir).unwrap();
+            }
+            std::fs::create_dir_all(&config_dir).unwrap();
         }
-        std::fs::create_dir_all(&config_dir).unwrap();
 
         let seed: [u8; 32] = rand::thread_rng().gen();
 

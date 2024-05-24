@@ -9,4 +9,5 @@ pub struct ClientConfig {
     pub client_target_node: Option<Pubkey>,
     pub client_duration_seconds: u64,
     pub client_wait_for_n_nodes: Option<u64>,
+    pub run_client: bool,
 }

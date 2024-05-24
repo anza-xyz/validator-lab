@@ -273,7 +273,6 @@ impl<'a> Kubernetes<'a> {
 
         k8s_helpers::create_replica_set(
             format!("{}-{}", image.validator_type(), image.tag()),
-            // ValidatorType::Bootstrap.to_string(),
             self.namespace.clone(),
             label_selector.clone(),
             image.clone(),
