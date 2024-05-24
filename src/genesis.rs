@@ -1,6 +1,7 @@
 use {
     crate::{
-        fetch_spl, new_spinner_progress_bar, release::DeployMethod, ValidatorType, SUN, WRITING,
+        fetch_spl, new_spinner_progress_bar, release::DeployMethod, ValidatorType, SOLANA_RELEASE,
+        SUN, WRITING,
     },
     log::*,
     rand::Rng,
@@ -281,9 +282,9 @@ impl Genesis {
         args.extend_from_slice(bench_tps_args);
 
         let executable_path = if let DeployMethod::ReleaseChannel(_) = deploy_method {
-            solana_root_path.join("solana-release/bin/solana-bench-tps")
+            solana_root_path.join(format!("{SOLANA_RELEASE}/bin/solana-bench-tps"))
         } else {
-            solana_root_path.join("farf/bin/solana-bench-tps")
+            solana_root_path.join(format!("{SOLANA_RELEASE}/bin/solana-bench-tps"))
         };
         let child = Command::new(executable_path)
             .args(args)

@@ -16,6 +16,7 @@ use {
 };
 
 const UPGRADEABLE_LOADER: &str = "BPFLoaderUpgradeab1e11111111111111111111111";
+pub const SOLANA_RELEASE: &str = "solana-release";
 
 #[derive(Clone, Debug)]
 pub struct EnvironmentConfig<'a> {

@@ -1,5 +1,5 @@
 use {
-    crate::{cat_file, download_to_temp, extract_release_archive},
+    crate::{cat_file, download_to_temp, extract_release_archive, SOLANA_RELEASE},
     git2::Repository,
     log::*,
     std::{
@@ -66,14 +66,13 @@ impl BuildConfig {
     }
 
     async fn setup_tar_deploy(&self, release_channel: &String) -> Result<PathBuf, Box<dyn Error>> {
-        let file_name = "solana-release";
-        let tar_filename = format!("{file_name}.tar.bz2");
+        let tar_filename = format!("{SOLANA_RELEASE}.tar.bz2");
         self.download_release_from_channel(&tar_filename, release_channel)
             .await?;
 
         // Extract it and load the release version metadata
         let tarball_filename = self.cluster_root_path.join(&tar_filename);
-        let release_dir = self.cluster_root_path.join(file_name);
+        let release_dir = self.cluster_root_path.join(SOLANA_RELEASE);
         extract_release_archive(&tarball_filename, &self.cluster_root_path).map_err(|err| {
             format!(
                 "Unable to extract {tar_filename} into {}: {err}",
@@ -98,7 +97,7 @@ impl BuildConfig {
                 ""
             };
 
-            let install_directory = self.cluster_root_path.join("farf");
+            let install_directory = self.cluster_root_path.join(SOLANA_RELEASE);
             let install_script = agave_path.join("scripts/cargo-install-all.sh");
             match std::process::Command::new(install_script)
                 .arg(install_directory)
@@ -142,8 +141,12 @@ impl BuildConfig {
 
         // Write to branch/tag and commit to version.yml
         let content = format!("channel: devbuild {note}\ncommit: {commit}");
-        std::fs::write(self.cluster_root_path.join("farf/version.yml"), content)
-            .expect("Failed to write version.yml");
+        std::fs::write(
+            self.cluster_root_path
+                .join(format!("{SOLANA_RELEASE}/version.yml")),
+            content,
+        )
+        .expect("Failed to write version.yml");
 
         let label = commit_tag.unwrap_or_else(|| commit.to_string()[..8].to_string());
 

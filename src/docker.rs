@@ -1,7 +1,7 @@
 use {
     crate::{
-        new_spinner_progress_bar, release::DeployMethod, startup_scripts::StartupScripts,
-        validator::Validator, ValidatorType, BUILD, ROCKET,
+        new_spinner_progress_bar, startup_scripts::StartupScripts, validator::Validator,
+        ValidatorType, BUILD, ROCKET, SOLANA_RELEASE,
     },
     log::*,
     std::{
@@ -66,15 +66,11 @@ impl Display for DockerImage {
 
 pub struct DockerConfig {
     pub base_image: String,
-    deploy_method: DeployMethod,
 }
 
 impl DockerConfig {
-    pub fn new(base_image: String, deploy_method: DeployMethod) -> Self {
-        DockerConfig {
-            base_image,
-            deploy_method,
-        }
+    pub fn new(base_image: String) -> Self {
+        DockerConfig { base_image }
     }
 
     pub fn build_image(
@@ -178,11 +174,6 @@ impl DockerConfig {
             }
             ValidatorType::Client(index) => format!("./docker-build/{validator_type}-{index}"),
         };
-        let solana_build_directory = if let DeployMethod::ReleaseChannel(_) = self.deploy_method {
-            "solana-release"
-        } else {
-            "farf"
-        };
 
         let dockerfile = format!(
             r#"
@@ -196,8 +187,8 @@ USER solana
 COPY --chown=solana:solana  {startup_script_directory} /home/solana/k8s-cluster-scripts
 RUN chmod +x /home/solana/k8s-cluster-scripts/*
 COPY --chown=solana:solana ./config-k8s/bootstrap-validator  /home/solana/ledger
-COPY --chown=solana:solana ./{solana_build_directory}/bin/ /home/solana/bin/
-COPY --chown=solana:solana ./{solana_build_directory}/version.yml /home/solana/
+COPY --chown=solana:solana ./{SOLANA_RELEASE}/bin/ /home/solana/bin/
+COPY --chown=solana:solana ./{SOLANA_RELEASE}/version.yml /home/solana/
 ENV PATH="/home/solana/bin:${{PATH}}"
 
 WORKDIR /home/solana

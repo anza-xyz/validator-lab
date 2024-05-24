@@ -27,6 +27,7 @@ kubectl create ns <namespace>
 cargo run --bin cluster --
     -n <namespace>
     --local-path <path-to-local-agave-monorepo>
+    --cluster-data-path <path-to-directory-to-store-cluster-accounts-genesis-etc>
 ```
 
 #### Build specific Agave release
@@ -34,6 +35,8 @@ cargo run --bin cluster --
 cargo run --bin cluster --
     -n <namespace>
     --release-channel <agave-version: e.g. v1.17.28> # note: MUST include the "v"
+    --cluster-data-path <path-to-directory-to-store-cluster-accounts-genesis-etc>
+
 ```
 
 #### Build from Local Repo and Configure Genesis and Bootstrap and Validator Image
@@ -42,6 +45,7 @@ Example:
 cargo run --bin cluster -- 
     -n <namespace> 
     --local-path /home/sol/solana
+    --cluster-data-path /home/sol/cluster_build
     --num_validators <number-of-non-bootstrap-voting-validators>
     # genesis config. Optional: Many of these have defaults
     --hashes-per-tick <hashes-per-tick>

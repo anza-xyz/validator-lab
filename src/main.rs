@@ -6,7 +6,7 @@ use {
         DEFAULT_MAX_LEDGER_SHREDS, DEFAULT_MIN_MAX_LEDGER_SHREDS,
     },
     solana_sdk::{signature::keypair::read_keypair_file, signer::Signer},
-    std::{fs, path::PathBuf, result::Result},
+    std::{path::PathBuf, result::Result},
     strum::VariantNames,
     validator_lab::{
         check_directory,
@@ -25,7 +25,7 @@ use {
         release::{BuildConfig, BuildType, DeployMethod},
         validator::{LabelType, Validator},
         validator_config::ValidatorConfig,
-        ClusterDataRoot, EnvironmentConfig, Metrics, ValidatorType,
+        ClusterDataRoot, EnvironmentConfig, Metrics, ValidatorType, SOLANA_RELEASE,
     },
 };
 
@@ -398,36 +398,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         unreachable!("One of --local-path or --release-channel must be provided.");
     };
 
-    // let cluster_data_root = SolanaRoot::new_from_path(environment_config.cluster_data_path);
-
-    // let (solana_root, build_path) = match &deploy_method {
-    //     DeployMethod::Local(path) => {
-    //         let root = SolanaRoot::new_from_path(path.into());
-    //         let path = root.get_root_path().join("farf/bin");
-    //         (root, path)
-    //     }
-    //     DeployMethod::ReleaseChannel(_) => {
-    //         // unwrap safe since required if release-channel used
-    //         let root =
-    //             SolanaRoot::new_from_path(environment_config.cluster_data_path.clone());
-    //         let path = root.get_root_path().join("solana-release/bin");
-    //         (root, path)
-    //     }
-    // };
-
     // DeployMethod::Local
     // - agave_repo_path    ->  /home/sol/solana                // path to solana repo (user-defined)
     // - cluster_data_root  ->  /home/sol/validator-lab-build/  // path to store all docker, accounts, genesis, etc
-    //      - this is just environment_config.cluster_data_path
     // - exec_path          ->  <config_path>/bin               // path to store built executables
     // DeployMethod::ReleaseChannel
     // - cluster_data_root  ->  /home/sol/validator-lab-build/  // path to store all docker, accounts, genesis, etc
-    //      - this is just environment_config.cluster_data_path
     // - exec_path          ->  <config_path>/bin               // path to store built executables
 
     let cluster_data_root = ClusterDataRoot::new_from_path(environment_config.cluster_data_path);
-    check_directory(&cluster_data_root.get_root_path(), "Cluster data root")?;
-    let exec_path = cluster_data_root.get_root_path().join("bin");
+    check_directory(cluster_data_root.get_root_path(), "Cluster data root")?;
+    let exec_path = cluster_data_root
+        .get_root_path()
+        .join(format!("{SOLANA_RELEASE}/bin"));
     let agave_repo_path: Option<PathBuf> = match &deploy_method {
         DeployMethod::Local(agave_path) => {
             let agave_path: PathBuf = agave_path.into();
@@ -535,10 +518,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let image_tag = build_config.prepare().await?.replace('.', "-"); // can't use "." or "_" in k8s names;
     info!("Setup Validator Environment. Image tag: {image_tag}");
 
-    /*
-    WORKS TIL HERE FOR LOCALPATH. INSTALLS BINARIES IN <cluster_data_root>
-    */
-
     let mut kub_controller = Kubernetes::new(
         environment_config.namespace,
         &mut validator_config,
@@ -586,7 +565,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // creates genesis and writes to binary file
         genesis
-            .generate(cluster_data_root.get_root_path(), &build_path)
+            .generate(cluster_data_root.get_root_path(), &exec_path)
             .await?;
         info!("Genesis created");
     }
@@ -604,10 +583,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Shred Version: {shred_version}");
 
     //unwraps are safe here. since their requirement is enforced by argmatches
-    let docker = DockerConfig::new(
-        matches.value_of("base_image").unwrap().to_string(),
-        deploy_method,
-    );
+    let docker = DockerConfig::new(matches.value_of("base_image").unwrap().to_string());
 
     let registry_name = matches.value_of("registry_name").unwrap().to_string();
     let image_name = matches.value_of("image_name").unwrap().to_string();
