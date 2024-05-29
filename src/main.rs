@@ -398,14 +398,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         unreachable!("One of --local-path or --release-channel must be provided.");
     };
 
-    // DeployMethod::Local
-    // - agave_repo_path    ->  /home/sol/solana                // path to solana repo (user-defined)
-    // - cluster_data_root  ->  /home/sol/validator-lab-build/  // path to store all docker, accounts, genesis, etc
-    // - exec_path          ->  <config_path>/bin               // path to store built executables
-    // DeployMethod::ReleaseChannel
-    // - cluster_data_root  ->  /home/sol/validator-lab-build/  // path to store all docker, accounts, genesis, etc
-    // - exec_path          ->  <config_path>/bin               // path to store built executables
-
     let cluster_data_root = ClusterDataRoot::new_from_path(environment_config.cluster_data_path);
     check_directory(cluster_data_root.get_root_path(), "Cluster data root")?;
     let exec_path = cluster_data_root
@@ -550,7 +542,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         genesis.generate_faucet()?;
         info!("Generated faucet account");
 
-        genesis.generate_accounts(ValidatorType::Bootstrap, 1)?;
+        genesis.generate_accounts(ValidatorType::Bootstrap, 1, None)?;
         info!("Generated bootstrap account");
 
         genesis.create_client_accounts(
@@ -571,10 +563,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // generate standard validator accounts
-    genesis.generate_accounts(ValidatorType::Standard, num_validators)?;
+    genesis.generate_accounts(ValidatorType::Standard, num_validators, Some(&image_tag))?;
     info!("Generated {num_validators} validator account(s)");
 
-    genesis.generate_accounts(ValidatorType::RPC, num_rpc_nodes)?;
+    genesis.generate_accounts(ValidatorType::RPC, num_rpc_nodes, Some(&image_tag))?;
     info!("Generated {num_rpc_nodes} rpc account(s)");
 
     let ledger_dir = config_directory.join("bootstrap-validator");
@@ -819,8 +811,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             kub_controller.deploy_secret(validator.secret()).await?;
             info!("Deployed Validator {validator_index} Secret");
 
-            let identity_path =
-                config_directory.join(format!("validator-identity-{validator_index}.json"));
+            let identity_path = config_directory.join(format!(
+                "validator-identity-{image_tag}-{validator_index}.json"
+            ));
             let validator_keypair =
                 read_keypair_file(identity_path).expect("Failed to read validator keypair file");
 

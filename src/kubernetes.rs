@@ -141,7 +141,10 @@ impl<'a> Kubernetes<'a> {
         secrets.insert(
             "identity".to_string(),
             SecretType::File {
-                path: config_dir.join(format!("validator-identity-{validator_index}.json")),
+                path: config_dir.join(format!(
+                    "validator-identity-{}-{validator_index}.json",
+                    self.deployment_tag
+                )),
             },
         );
 
@@ -151,7 +154,8 @@ impl<'a> Kubernetes<'a> {
                 type_name.to_string(),
                 SecretType::File {
                     path: config_dir.join(format!(
-                        "validator-{type_name}-account-{validator_index}.json"
+                        "validator-{type_name}-account-{}-{validator_index}.json",
+                        self.deployment_tag
                     )),
                 },
             );
@@ -174,7 +178,10 @@ impl<'a> Kubernetes<'a> {
         secrets.insert(
             "identity".to_string(),
             SecretType::File {
-                path: config_dir.join(format!("rpc-node-identity-{rpc_index}.json")),
+                path: config_dir.join(format!(
+                    "rpc-node-identity-{}-{rpc_index}.json",
+                    self.deployment_tag
+                )),
             },
         );
         secrets.insert(

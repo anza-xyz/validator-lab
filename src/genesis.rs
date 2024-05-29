@@ -159,6 +159,7 @@ impl Genesis {
         &mut self,
         validator_type: ValidatorType,
         number_of_accounts: usize,
+        deployment_tag: Option<&str>,
     ) -> Result<(), Box<dyn Error>> {
         info!("generating {number_of_accounts} {validator_type} accounts...");
 
@@ -174,6 +175,18 @@ impl Genesis {
             }
         };
 
+        let account_types: Vec<String> = if let Some(tag) = deployment_tag {
+            account_types
+                .into_iter()
+                .map(|acct| format!("{}-{}", acct, tag))
+                .collect()
+        } else {
+            account_types
+                .into_iter()
+                .map(|acct| acct.to_string())
+                .collect()
+        };
+
         let total_accounts_to_generate = number_of_accounts * account_types.len();
         let keypairs = self
             .key_generator
@@ -187,12 +200,12 @@ impl Genesis {
     fn write_accounts_to_file(
         &self,
         validator_type: &ValidatorType,
-        account_types: &[&str],
+        account_types: &[String],
         keypairs: &[Keypair],
     ) -> Result<(), Box<dyn Error>> {
         for (i, keypair) in keypairs.iter().enumerate() {
             let account_index = i / account_types.len();
-            let account = account_types[i % account_types.len()];
+            let account = &account_types[i % account_types.len()];
             let filename = match validator_type {
                 ValidatorType::Bootstrap => {
                     format!("{validator_type}/{account}.json")
@@ -406,7 +419,7 @@ impl Genesis {
     pub async fn generate(
         &mut self,
         solana_root_path: &Path,
-        build_path: &Path,
+        exec_path: &Path,
     ) -> Result<(), Box<dyn Error>> {
         let mut args = self.setup_genesis_flags()?;
         let mut spl_args = self.setup_spl_args(solana_root_path).await?;
@@ -415,7 +428,7 @@ impl Genesis {
         let progress_bar = new_spinner_progress_bar();
         progress_bar.set_message(format!("{SUN}Building Genesis..."));
 
-        let executable_path = build_path.join("solana-genesis");
+        let executable_path = exec_path.join("solana-genesis");
         let output = Command::new(executable_path)
             .args(&args)
             .output()

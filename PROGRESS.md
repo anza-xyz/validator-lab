@@ -80,8 +80,8 @@ By here:
 - We can control the how and where we deploy kubernetes pods
 
 - [ ] Other Features
-    - Heterogeneous Clusters (e.g. multiple client versions)
-    - Deploy with user-defined stake distribution
+    - [x] Heterogeneous Clusters (e.g. multiple client versions)
+    - [ ] Deploy with user-defined stake distribution
 
 By here:
 - We can deploy bootstrap, N validators, M RPC nodes, and C clients with various command line configurations
