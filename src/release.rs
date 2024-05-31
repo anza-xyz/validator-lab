@@ -42,9 +42,9 @@ impl BuildConfig {
         cluster_root_path: &Path,
         agave_repo_path: Option<PathBuf>,
     ) -> Self {
-        // If the solana-release directory exists, delete it and create a new one.
+        // If the solana-release directory exists and we're not skipping the build, delete it and create a new one.
         let install_directory = cluster_root_path.join(SOLANA_RELEASE);
-        if install_directory.exists() {
+        if build_type != BuildType::Skip && install_directory.exists() {
             std::fs::remove_dir_all(&install_directory).unwrap();
         }
         std::fs::create_dir_all(&install_directory).unwrap();

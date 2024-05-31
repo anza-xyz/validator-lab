@@ -80,7 +80,7 @@ By here:
 - We can control the how and where we deploy kubernetes pods
 
 - [ ] Other Features
-    - [x] Heterogeneous Clusters (e.g. multiple client versions)
+    - [x] Heterogeneous Clusters (i.e. multiple validator versions)
     - [ ] Deploy with user-defined stake distribution
 
 By here:

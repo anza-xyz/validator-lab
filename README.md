@@ -36,7 +36,6 @@ cargo run --bin cluster --
     -n <namespace>
     --release-channel <agave-version: e.g. v1.17.28> # note: MUST include the "v"
     --cluster-data-path <path-to-directory-to-store-cluster-accounts-genesis-etc>
-
 ```
 
 #### Build from Local Repo and Configure Genesis and Bootstrap and Validator Image
@@ -45,7 +44,7 @@ Example:
 cargo run --bin cluster -- 
     -n <namespace> 
     --local-path /home/sol/solana
-    --cluster-data-path /home/sol/cluster_build
+    --cluster-data-path /home/sol/validator-lab-build
     --num_validators <number-of-non-bootstrap-voting-validators>
     # genesis config. Optional: Many of these have defaults
     --hashes-per-tick <hashes-per-tick>
@@ -72,6 +71,7 @@ cargo run --bin cluster --
     --client-to-run <type-of-client e.g. bench-tps>
     --client-wait-for-n-nodes <wait-for-N-nodes-to-converge-before-starting-client>
     --bench-tps-args <bench-tps-args e.g. tx-count=25000>
+    --run-client
 ```
 
 ## Metrics
@@ -95,6 +95,26 @@ You can add in RPC nodes. These sit behind a load balancer. Load balancer distri
 --num-rpc-nodes <num-nodes>
 ```
 
+## Heterogeneous Clusters
+You can deploy a cluster with heterogeneous validator versions
+Additional flags required for a heterogeneous cluster:
+    - `--no-bootstrap`: do not deploy a bootstrap validator
+    - `--run-client`: deploy and run a client
+
+For example, say you want to deploy a cluster running some agave-repo local commit and v1.18.14
+1) Deploy a local cluster as normal:
+   * Specify how many validators, rpc nodes, and clients you want. 
+   * We will be creating client accounts but not deploying the clients yet. As a result, you need to specify `tx-count` in the client configuration to generate `tx-count * 8` client accounts.
+```
+cargo run --bin cluster -- -n <namespace> --registry <registry> --local-path /home/sol/solana --num-validators 3 --num-rpc-nodes 1 --cluster-data-path /home/sol/validator-lab-build/ --num-clients 1 --client-type tpu-client --client-to-run bench-tps --bench-tps-args 'tx-count=10000'
+```
+1) Deploy a second set of validators running a different validator version
+    * Must pass in `--no-bootstrap` so we don't recreate the genesis and deploy another bootstrap
+    * If this is the last set of validators you want to deploy, pass in `--run-client` along with your client configurations to deploy and execute the client.
+    * If it is not the last set of validators you want to deploy in this cluster, just leave out all client configurations. 
+```
+cargo run --bin cluster -- -n <namespace> --registry <registry> --release-channel v1.18.14 --num-validators 3 --cluster-data-path /home/sol/validator-lab-build/ --no-bootstrap --run-client --num-clients 1 --client-type tpu-client --client-to-run bench-tps --bench-tps-args 'tx-count=10000 threads=8 thread-batch-sleep-ms=250'
+```
 
 ## Kubernetes Cheatsheet
 Create namespace:

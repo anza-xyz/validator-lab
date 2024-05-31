@@ -52,7 +52,7 @@ fn parse_matches() -> clap::ArgMatches {
                 .possible_values(BuildType::VARIANTS)
                 .default_value(BuildType::Release.into())
                 .help("Specifies the build type: skip, debug, or release.
-                Skip -> Will not build release or local repo and will not push to container registry"),
+                Skip -> Will not build release or local repo"),
         )
         .arg(
             Arg::with_name("release_channel")
@@ -736,7 +736,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             info!("Deployed RPC Node {rpc_index} Secret");
 
             let identity_path =
-                config_directory.join(format!("rpc-node-identity-{rpc_index}.json"));
+                config_directory.join(format!("rpc-node-identity-{image_tag}-{rpc_index}.json"));
             let rpc_keypair =
                 read_keypair_file(identity_path).expect("Failed to read rpc-node keypair file");
 

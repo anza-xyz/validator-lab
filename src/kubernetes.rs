@@ -204,7 +204,13 @@ impl<'a> Kubernetes<'a> {
             self.deployment_tag
         );
         let faucet_key_path = config_dir.join("faucet.json");
-        let identity_key_path = config_dir.join(format!("validator-identity-{}.json", 0));
+        // TODO: here we assumes that the current cluster deployment includes both a client AND at least one validator
+        // If we do not deploy with another validator (rpc, bootstrap, standard),
+        // this will fail since the validator-identity of this client version will not exist
+        let identity_key_path = config_dir.join(format!(
+            "validator-identity-{}-{}.json",
+            self.deployment_tag, 0
+        ));
 
         let mut secrets = BTreeMap::new();
         secrets.insert(

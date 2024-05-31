@@ -299,6 +299,7 @@ impl Genesis {
         } else {
             solana_root_path.join(format!("{SOLANA_RELEASE}/bin/solana-bench-tps"))
         };
+
         let child = Command::new(executable_path)
             .args(args)
             .stdout(Stdio::null())
