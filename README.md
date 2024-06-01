@@ -74,6 +74,18 @@ cargo run --bin cluster --
     --run-client
 ```
 
+#### Client bench-tps-args
+Command Examples:
+For client version < 2.0.0 && client version > 1.17.0
+```
+--bench-tps-args 'tx-count=5000 keypair-multiplier=4 threads=16 num-lamports-per-account=200000000 sustained tpu-connection-pool-size=8 thread-batch-sleep-ms=0'
+```
+
+For client Version >= 2.0.0
+```
+--bench-tps-args 'tx-count=5000 keypair-multiplier=4 threads=16 num-lamports-per-account=200000000 sustained tpu-connection-pool-size=8 thread-batch-sleep-ms=0 commitment-config=processed'
+```
+
 ## Metrics
 1) Setup metrics database:
 ```
@@ -115,6 +127,8 @@ cargo run --bin cluster -- -n <namespace> --registry <registry> --local-path /ho
 ```
 cargo run --bin cluster -- -n <namespace> --registry <registry> --release-channel v1.18.14 --num-validators 3 --cluster-data-path /home/sol/validator-lab-build/ --no-bootstrap --run-client --num-clients 1 --client-type tpu-client --client-to-run bench-tps --bench-tps-args 'tx-count=10000 threads=8 thread-batch-sleep-ms=250'
 ```
+
+Note: We can't deploy heterogeneous clusters across v1.17 and v1.18 due to feature differences. Hope to fix this in the future. Have something where we can specifically define which features to enable.
 
 ## Kubernetes Cheatsheet
 Create namespace:

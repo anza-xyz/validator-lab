@@ -1025,11 +1025,35 @@ bench-tps)
   url="$entrypointIp:8899"
 
   args+=(--bind-address "$entrypointIp")
-  args+=(--client-node-id ./client-accounts/identity.json)
+  args+=(--client-node-id ./client-accounts/swqos.json) # bootstrap validator
+  
+  // do not append --sustained if already passed in
+  if [[ ! "$benchTpsExtraArgs" =~ --sustained ]]; then
+    args+=(--sustained)
+  fi
+
+  # check solana-bench-tps version and use correct flag
+  version_output=$(solana-bench-tps --version)
+  version=$(echo $version_output | awk '{print $2}')
+  version_ge() {
+    # Compare two version strings
+    # Usage: version_ge 2.0.0 1.18.14
+    # Returns 0 if version 1 >= version 2, 1 otherwise
+    local v1=$(echo "$1" | awk -F. '{ printf("%d%03d%03d", $1,$2,$3); }')
+    local v2=$(echo "$2" | awk -F. '{ printf("%d%03d%03d", $1,$2,$3); }')
+    [[ "$v1" -ge "$v2" ]]
+  }
+
+  # Check if the version is >= v2.0.0
+  # --identity is deprecated in v2.0.0
+  if version_ge "$version" "2.0.0"; then
+    args+=(--authority ./client-accounts/identity.json)
+  else
+    args+=(--identity ./client-accounts/identity.json)
+  fi
 
   clientCommand="\
     solana-bench-tps \
-      --sustained \
       $benchTpsExtraArgs \
       --read-client-keys ./client-accounts.yml \
       --url "http://$url"

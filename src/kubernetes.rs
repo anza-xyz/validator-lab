@@ -226,6 +226,15 @@ impl<'a> Kubernetes<'a> {
             },
         );
 
+        let identity_key_path = config_dir.join("bootstrap-validator/identity.json");
+
+        secrets.insert(
+            "swqos".to_string(),
+            SecretType::File {
+                path: identity_key_path,
+            },
+        );
+
         k8s_helpers::create_secret(secret_name, secrets)
     }
 

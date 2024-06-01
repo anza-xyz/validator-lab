@@ -1,8 +1,5 @@
 use {
-    crate::{
-        fetch_spl, new_spinner_progress_bar, release::DeployMethod, ValidatorType, SOLANA_RELEASE,
-        SUN, WRITING,
-    },
+    crate::{fetch_spl, new_spinner_progress_bar, ValidatorType, SOLANA_RELEASE, SUN, WRITING},
     log::*,
     rand::Rng,
     solana_core::gen_keys::GenKeys,
@@ -228,7 +225,6 @@ impl Genesis {
         bench_tps_args: &[String],
         target_lamports_per_signature: u64,
         config_dir: &Path,
-        deploy_method: &DeployMethod,
         solana_root_path: &Path,
     ) -> Result<(), Box<dyn Error>> {
         if number_of_clients == 0 {
@@ -248,7 +244,6 @@ impl Genesis {
                     config_dir,
                     target_lamports_per_signature,
                     bench_tps_args,
-                    deploy_method,
                     solana_root_path,
                 )
             })
@@ -276,12 +271,12 @@ impl Genesis {
         config_dir: &Path,
         target_lamports_per_signature: u64,
         bench_tps_args: &[String],
-        deploy_method: &DeployMethod,
         solana_root_path: &Path,
     ) -> Result<Child, Box<dyn Error>> {
         info!("client account: {client_index}");
         let mut args = Vec::new();
         let account_path = config_dir.join(format!("bench-tps-{client_index}.yml"));
+        debug!("account path: {account_path:?}");
         args.push("--write-client-keys".to_string());
         args.push(account_path.into_os_string().into_string().map_err(|err| {
             std::io::Error::new(
@@ -294,11 +289,8 @@ impl Genesis {
 
         args.extend_from_slice(bench_tps_args);
 
-        let executable_path = if let DeployMethod::ReleaseChannel(_) = deploy_method {
-            solana_root_path.join(format!("{SOLANA_RELEASE}/bin/solana-bench-tps"))
-        } else {
-            solana_root_path.join(format!("{SOLANA_RELEASE}/bin/solana-bench-tps"))
-        };
+        let executable_path =
+            solana_root_path.join(format!("{SOLANA_RELEASE}/bin/solana-bench-tps"));
 
         let child = Command::new(executable_path)
             .args(args)

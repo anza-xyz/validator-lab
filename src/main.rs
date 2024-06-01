@@ -550,7 +550,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             &client_config.bench_tps_args,
             DEFAULT_CLIENT_LAMPORTS_PER_SIGNATURE,
             &config_directory,
-            &deploy_method,
             cluster_data_root.get_root_path(),
         )?;
         info!("Client accounts created");
