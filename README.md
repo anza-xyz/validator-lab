@@ -27,6 +27,7 @@ kubectl create ns <namespace>
 cargo run --bin cluster --
     -n <namespace>
     --local-path <path-to-local-agave-monorepo>
+    --cluster-data-path <path-to-directory-to-store-cluster-accounts-genesis-etc>
 ```
 
 #### Build specific Agave release
@@ -34,7 +35,17 @@ cargo run --bin cluster --
 cargo run --bin cluster --
     -n <namespace>
     --release-channel <agave-version: e.g. v1.17.28> # note: MUST include the "v"
+    --cluster-data-path <path-to-directory-to-store-cluster-accounts-genesis-etc>
 ```
+
+#### Note on `--cluster-data-path`:
+`--cluster-data-path` can just be an empty directory. It will be used to store:
+1) Validator, client, rpc, and faucet account(s)
+2) Genesis
+3) Validator, client, and rpc Dockerfiles
+
+After deploying a cluster with a bootstrap, 2 clients, 2 validators, and 3 rpc nodes all running v1.18.13, your `<cluster-data-path>` directory will look something like:
+![Cluster Data Path Directory](cluster_data_path_tree.png)
 
 #### Build from Local Repo and Configure Genesis and Bootstrap and Validator Image
 Example:
@@ -42,6 +53,7 @@ Example:
 cargo run --bin cluster -- 
     -n <namespace> 
     --local-path /home/sol/solana
+    --cluster-data-path /home/sol/validator-lab-build
     --num_validators <number-of-non-bootstrap-voting-validators>
     # genesis config. Optional: Many of these have defaults
     --hashes-per-tick <hashes-per-tick>
@@ -70,6 +82,20 @@ cargo run --bin cluster --
     --bench-tps-args <bench-tps-args e.g. tx-count=25000>
 ```
 
+#### Client bench-tps-args
+Client accounts are funded on deployment of the client.
+
+Command Examples:
+For client version < 2.0.0 && client version > 1.17.0
+```
+--bench-tps-args 'tx-count=5000 keypair-multiplier=4 threads=16 num-lamports-per-account=200000000 sustained tpu-connection-pool-size=8 thread-batch-sleep-ms=0'
+```
+
+For client Version >= 2.0.0
+```
+--bench-tps-args 'tx-count=5000 keypair-multiplier=4 threads=16 num-lamports-per-account=200000000 sustained tpu-connection-pool-size=8 thread-batch-sleep-ms=0 commitment-config=processed'
+```
+
 ## Metrics
 1) Setup metrics database:
 ```
@@ -91,6 +117,34 @@ You can add in RPC nodes. These sit behind a load balancer. Load balancer distri
 --num-rpc-nodes <num-nodes>
 ```
 
+## Heterogeneous Clusters
+You can deploy a cluster with heterogeneous validator versions
+For example, say you want to deploy a cluster with the following nodes:
+* 1 bootstrap, 3 validators, 1 rpc-node, and 1 client running some agave-repo local commit
+* 5 validators and 4 rpc nodes running v1.18.15
+* 20 clients running v1.18.14
+
+Each set of validators and clients get deployed individually by version. But they will all run in the same cluster
+
+1) Deploy a local cluster as normal:
+   * Specify how many validators, rpc nodes, and clients you want running v1.18.14
+```
+cargo run --bin cluster -- -n <namespace> --registry <registry> --local-path /home/sol/solana --num-validators 3 --num-rpc-nodes 1 --cluster-data-path /home/sol/validator-lab-build/ --num-clients 1 --client-type tpu-client --client-to-run bench-tps --bench-tps-args 'tx-count=5000 threads=4 thread-batch-sleep-ms=0'
+```
+2) Deploy a set of 5 validators running a different validator version (e.g. v1.18.15)
+    * Must pass in `--no-bootstrap` so we don't recreate the genesis and deploy another bootstrap
+```
+cargo run --bin cluster -- -n <namespace> --registry <registry> --release-channel v1.18.15 --num-validators 5 --num-rpc-nodes 4 --cluster-data-path /home/sol/validator-lab-build/ --no-bootstrap
+```
+3) Deploy the final set of clients running v1.18.14 these 20 clients will load the cluster you deployed in (1) and (2)
+    * Must pass in `--no-bootstrap` so we don't recreate the genesis and deploy another bootstrap
+```
+cargo run --bin cluster -- -n <namespace> --registry <registry> --release-channel v1.18.14 --cluster-data-path /home/sol/validator-lab-build/ --num-clients 20 --client-type tpu-client --client-to-run bench-tps --bench-tps-args 'tx-count=10000 threads=16 thread-batch-sleep-ms=0' --no-bootstrap
+```
+
+For steps (2) and (3), when using `--no-bootstrap`, we assume that the directory at `--cluster-data-path <directory>` has the correct genesis, bootstrap identity, and faucet account stored. These are all created in step (1).
+
+Note: We can't deploy heterogeneous clusters across v1.17 and v1.18 due to feature differences. Hope to fix this in the future. Have something where we can specifically define which features to enable.
 
 ## Kubernetes Cheatsheet
 Create namespace:

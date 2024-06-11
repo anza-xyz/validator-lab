@@ -141,7 +141,10 @@ impl<'a> Kubernetes<'a> {
         secrets.insert(
             "identity".to_string(),
             SecretType::File {
-                path: config_dir.join(format!("validator-identity-{validator_index}.json")),
+                path: config_dir.join(format!(
+                    "validator-identity-{}-{validator_index}.json",
+                    self.deployment_tag
+                )),
             },
         );
 
@@ -151,7 +154,8 @@ impl<'a> Kubernetes<'a> {
                 type_name.to_string(),
                 SecretType::File {
                     path: config_dir.join(format!(
-                        "validator-{type_name}-account-{validator_index}.json"
+                        "validator-{type_name}-account-{}-{validator_index}.json",
+                        self.deployment_tag
                     )),
                 },
             );
@@ -174,7 +178,10 @@ impl<'a> Kubernetes<'a> {
         secrets.insert(
             "identity".to_string(),
             SecretType::File {
-                path: config_dir.join(format!("rpc-node-identity-{rpc_index}.json")),
+                path: config_dir.join(format!(
+                    "rpc-node-identity-{}-{rpc_index}.json",
+                    self.deployment_tag
+                )),
             },
         );
         secrets.insert(
@@ -196,18 +203,19 @@ impl<'a> Kubernetes<'a> {
             "client-accounts-secret-{}-{client_index}",
             self.deployment_tag
         );
-        let faucet_key_path = config_dir.join("faucet.json");
-        let identity_key_path = config_dir.join(format!("validator-identity-{}.json", 0));
-
         let mut secrets = BTreeMap::new();
+
+        let faucet_key_path = config_dir.join("faucet.json");
         secrets.insert(
             "faucet".to_string(),
             SecretType::File {
                 path: faucet_key_path,
             },
         );
+
+        let identity_key_path = config_dir.join("bootstrap-validator/identity.json");
         secrets.insert(
-            "identity".to_string(),
+            "bootstrap-identity".to_string(),
             SecretType::File {
                 path: identity_key_path,
             },
@@ -273,7 +281,6 @@ impl<'a> Kubernetes<'a> {
 
         k8s_helpers::create_replica_set(
             format!("{}-{}", image.validator_type(), image.tag()),
-            // ValidatorType::Bootstrap.to_string(),
             self.namespace.clone(),
             label_selector.clone(),
             image.clone(),

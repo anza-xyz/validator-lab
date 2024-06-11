@@ -1,5 +1,5 @@
 use {
-    crate::{cat_file, download_to_temp, extract_release_archive},
+    crate::{cat_file, download_to_temp, extract_release_archive, SOLANA_RELEASE},
     git2::Repository,
     log::*,
     std::{
@@ -20,7 +20,8 @@ pub enum DeployMethod {
 #[derive(PartialEq, EnumString, IntoStaticStr, VariantNames, Clone)]
 #[strum(serialize_all = "lowercase")]
 pub enum BuildType {
-    Skip, // use Agave build from the previous run
+    /// use Agave build from the previous run
+    Skip,
     Debug,
     Release,
 }
@@ -28,19 +29,31 @@ pub enum BuildType {
 pub struct BuildConfig {
     deploy_method: DeployMethod,
     build_type: BuildType,
-    solana_root_path: PathBuf,
+    cluster_root_path: PathBuf,
+    agave_repo_path: Option<PathBuf>,
+    /// solana-release directory holding all solana/agave bins
+    install_directory: PathBuf,
 }
 
 impl BuildConfig {
     pub fn new(
         deploy_method: DeployMethod,
         build_type: BuildType,
-        solana_root_path: &Path,
+        cluster_root_path: &Path,
+        agave_repo_path: Option<PathBuf>,
     ) -> Self {
+        // If the solana-release directory exists and we're not skipping the build, delete it and create a new one.
+        let install_directory = cluster_root_path.join(SOLANA_RELEASE);
+        if build_type != BuildType::Skip && install_directory.exists() {
+            std::fs::remove_dir_all(&install_directory).unwrap();
+        }
+        std::fs::create_dir_all(&install_directory).unwrap();
         BuildConfig {
             deploy_method,
             build_type,
-            solana_root_path: solana_root_path.to_path_buf(),
+            cluster_root_path: cluster_root_path.to_path_buf(),
+            agave_repo_path,
+            install_directory,
         }
     }
 
@@ -50,9 +63,9 @@ impl BuildConfig {
                 if self.build_type == BuildType::Skip {
                     return Ok(channel.clone());
                 }
-                let tar_directory = self.setup_tar_deploy(channel).await?;
+                self.setup_tar_deploy(channel).await?;
                 info!("Successfully setup tar file");
-                cat_file(&tar_directory.join("version.yml"))?;
+                cat_file(&self.install_directory.join("version.yml"))?;
                 Ok(channel.clone())
             }
             DeployMethod::Local(_) => {
@@ -62,26 +75,28 @@ impl BuildConfig {
         }
     }
 
-    async fn setup_tar_deploy(&self, release_channel: &String) -> Result<PathBuf, Box<dyn Error>> {
-        let file_name = "solana-release";
-        let tar_filename = format!("{file_name}.tar.bz2");
+    async fn setup_tar_deploy(&self, release_channel: &String) -> Result<(), Box<dyn Error>> {
+        let tar_filename = format!("{SOLANA_RELEASE}.tar.bz2");
         self.download_release_from_channel(&tar_filename, release_channel)
             .await?;
 
         // Extract it and load the release version metadata
-        let tarball_filename = self.solana_root_path.join(&tar_filename);
-        let release_dir = self.solana_root_path.join(file_name);
-        extract_release_archive(&tarball_filename, &self.solana_root_path).map_err(|err| {
+        let tarball_filename = self.cluster_root_path.join(&tar_filename);
+        extract_release_archive(&tarball_filename, &self.cluster_root_path).map_err(|err| {
             format!(
                 "Unable to extract {tar_filename} into {}: {err}",
-                release_dir.display()
+                self.install_directory.display()
             )
         })?;
-
-        Ok(release_dir)
+        Ok(())
     }
 
     fn build(&self) -> Result<String, Box<dyn Error>> {
+        let agave_path = match &self.agave_repo_path {
+            Some(path) => path.clone(),
+            None => return Err("An agave repo path must be configured to build, please specify `--cluster-data-path`".into()),
+        };
+
         let start_time = Instant::now();
         if self.build_type != BuildType::Skip {
             let build_variant = if self.build_type == BuildType::Debug {
@@ -90,10 +105,9 @@ impl BuildConfig {
                 ""
             };
 
-            let install_directory = self.solana_root_path.join("farf");
-            let install_script = self.solana_root_path.join("scripts/cargo-install-all.sh");
+            let install_script = agave_path.join("scripts/cargo-install-all.sh");
             match std::process::Command::new(install_script)
-                .arg(install_directory)
+                .arg(self.install_directory.clone())
                 .arg(build_variant)
                 .arg("--validator-only")
                 .status()
@@ -109,7 +123,7 @@ impl BuildConfig {
             }
         }
 
-        let solana_repo = Repository::open(self.solana_root_path.as_path())?;
+        let solana_repo = Repository::open(agave_path.as_path())?;
         let commit = solana_repo.revparse_single("HEAD")?.id();
         let branch = solana_repo
             .head()?
@@ -134,8 +148,12 @@ impl BuildConfig {
 
         // Write to branch/tag and commit to version.yml
         let content = format!("channel: devbuild {note}\ncommit: {commit}");
-        std::fs::write(self.solana_root_path.join("farf/version.yml"), content)
-            .expect("Failed to write version.yml");
+        std::fs::write(
+            self.cluster_root_path
+                .join(format!("{SOLANA_RELEASE}/version.yml")),
+            content,
+        )
+        .expect("Failed to write version.yml");
 
         let label = commit_tag.unwrap_or_else(|| commit.to_string()[..8].to_string());
 
@@ -149,7 +167,7 @@ impl BuildConfig {
         release_channel: &String,
     ) -> Result<(), Box<dyn Error>> {
         info!("Downloading release from channel: {release_channel}");
-        let file_path = self.solana_root_path.join(tar_filename);
+        let file_path = self.cluster_root_path.join(tar_filename);
         // Remove file
         if let Err(err) = fs::remove_file(&file_path) {
             if err.kind() != std::io::ErrorKind::NotFound {

@@ -1,7 +1,7 @@
 use {
     crate::{
-        new_spinner_progress_bar, release::DeployMethod, startup_scripts::StartupScripts,
-        validator::Validator, ValidatorType, BUILD, ROCKET,
+        new_spinner_progress_bar, startup_scripts::StartupScripts, validator::Validator,
+        ValidatorType, BUILD, ROCKET, SOLANA_RELEASE,
     },
     log::*,
     std::{
@@ -66,15 +66,11 @@ impl Display for DockerImage {
 
 pub struct DockerConfig {
     pub base_image: String,
-    deploy_method: DeployMethod,
 }
 
 impl DockerConfig {
-    pub fn new(base_image: String, deploy_method: DeployMethod) -> Self {
-        DockerConfig {
-            base_image,
-            deploy_method,
-        }
+    pub fn new(base_image: String) -> Self {
+        DockerConfig { base_image }
     }
 
     pub fn build_image(
@@ -178,11 +174,6 @@ impl DockerConfig {
             }
             ValidatorType::Client(index) => format!("./docker-build/{validator_type}-{index}"),
         };
-        let solana_build_directory = if let DeployMethod::ReleaseChannel(_) = self.deploy_method {
-            "solana-release"
-        } else {
-            "farf"
-        };
 
         let dockerfile = format!(
             r#"
@@ -195,15 +186,16 @@ RUN apt-get update && apt-get install -y iputils-ping curl vim && \
 USER solana
 COPY --chown=solana:solana  {startup_script_directory} /home/solana/k8s-cluster-scripts
 RUN chmod +x /home/solana/k8s-cluster-scripts/*
-COPY --chown=solana:solana ./config-k8s/bootstrap-validator  /home/solana/ledger
-COPY --chown=solana:solana ./{solana_build_directory}/bin/ /home/solana/bin/
-COPY --chown=solana:solana ./{solana_build_directory}/version.yml /home/solana/
+{}
+COPY --chown=solana:solana ./{SOLANA_RELEASE}/bin/ /home/solana/bin/
+COPY --chown=solana:solana ./{SOLANA_RELEASE}/version.yml /home/solana/
 ENV PATH="/home/solana/bin:${{PATH}}"
 
 WORKDIR /home/solana
 {}
 "#,
             self.base_image,
+            DockerConfig::check_copy_ledger(validator_type),
             self.insert_client_accounts_if_present(solana_root_path, validator_type)?
         );
 
@@ -213,6 +205,16 @@ WORKDIR /home/solana
             content.unwrap_or(dockerfile.as_str()),
         )?;
         Ok(())
+    }
+
+    fn check_copy_ledger(validator_type: &ValidatorType) -> String {
+        match validator_type {
+            ValidatorType::Bootstrap | ValidatorType::RPC => {
+                "COPY --chown=solana:solana ./config-k8s/bootstrap-validator /home/solana/ledger"
+                    .to_string()
+            }
+            ValidatorType::Standard | &ValidatorType::Client(_) => "".to_string(),
+        }
     }
 
     fn insert_client_accounts_if_present(
@@ -234,18 +236,9 @@ COPY --chown=solana:solana ./config-k8s/bench-tps-{index}.yml /home/solana/clien
                     Err(format!("{bench_tps_path:?} does not exist!").into())
                 }
             }
-            ValidatorType::Bootstrap => {
-                let client_accounts_path = solana_root_path.join("config-k8s/client-accounts.yml");
-                if client_accounts_path.exists() {
-                    Ok(r#"
-COPY --chown=solana:solana ./config-k8s/client-accounts.yml /home/solana
-                    "#
-                    .to_string())
-                } else {
-                    Ok("".to_string())
-                }
+            ValidatorType::Bootstrap | ValidatorType::Standard | ValidatorType::RPC => {
+                Ok("".to_string())
             }
-            ValidatorType::Standard | ValidatorType::RPC => Ok("".to_string()),
         }
     }
 

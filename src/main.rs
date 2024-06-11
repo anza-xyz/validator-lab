@@ -6,9 +6,10 @@ use {
         DEFAULT_MAX_LEDGER_SHREDS, DEFAULT_MIN_MAX_LEDGER_SHREDS,
     },
     solana_sdk::{signature::keypair::read_keypair_file, signer::Signer},
-    std::{fs, path::PathBuf, result::Result},
+    std::{path::PathBuf, result::Result},
     strum::VariantNames,
     validator_lab::{
+        check_directory,
         client_config::ClientConfig,
         cluster_images::ClusterImages,
         docker::{DockerConfig, DockerImage},
@@ -24,7 +25,7 @@ use {
         release::{BuildConfig, BuildType, DeployMethod},
         validator::{LabelType, Validator},
         validator_config::ValidatorConfig,
-        EnvironmentConfig, Metrics, SolanaRoot, ValidatorType,
+        ClusterDataRoot, EnvironmentConfig, Metrics, ValidatorType, SOLANA_RELEASE,
     },
 };
 
@@ -51,13 +52,12 @@ fn parse_matches() -> clap::ArgMatches {
                 .possible_values(BuildType::VARIANTS)
                 .default_value(BuildType::Release.into())
                 .help("Specifies the build type: skip, debug, or release.
-                Skip -> Will not build release or local repo and will not push to container registry"),
+                Skip -> Will not build release or local repo"),
         )
         .arg(
             Arg::with_name("release_channel")
                 .long("release-channel")
                 .takes_value(true)
-                .requires("build_directory")
                 .help("Pulls specific release version. e.g. v1.17.2"),
         )
         .group(
@@ -66,11 +66,12 @@ fn parse_matches() -> clap::ArgMatches {
                 .required(true),
         )
         .arg(
-            Arg::with_name("build_directory")
-                .long("build-dir")
+            Arg::with_name("cluster_data_path")
+                .long("cluster-data-path")
                 .takes_value(true)
-                .conflicts_with("local_path")
-                .help("Absolute path to build directory for release-channel
+                .required(true)
+                .value_name("DIRECTORY")
+                .help("Absolute path to cluster_data directory for storing accounts, genesis, etc
                 e.g. /home/sol/validator-lab-build"),
         )
         // non-bootstrap validators
@@ -291,6 +292,12 @@ fn parse_matches() -> clap::ArgMatches {
                 .value_name("NUM")
                 .help("Client Config. Optional: Wait for NUM nodes to converge"),
         )
+        // Heterogeneous Cluster Config
+        .arg(
+            Arg::with_name("no_bootstrap")
+                .long("no-bootstrap")
+                .help("Do not deploy a bootstrap validator. Used when deploying heterogeneous clusters"),
+        )
         // kubernetes config
         .arg(
             Arg::with_name("cpu_requests")
@@ -354,7 +361,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let matches = parse_matches();
     let environment_config = EnvironmentConfig {
         namespace: matches.value_of("cluster_namespace").unwrap_or_default(),
-        build_directory: matches.value_of("build_directory").map(PathBuf::from),
+        cluster_data_path: matches
+            .value_of("cluster_data_path")
+            .map(PathBuf::from)
+            .unwrap(),
     };
 
     let num_validators = value_t_or_exit!(matches, "number_of_validators", usize);
@@ -383,43 +393,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         unreachable!("One of --local-path or --release-channel must be provided.");
     };
 
-    let (solana_root, build_path) = match &deploy_method {
-        DeployMethod::Local(path) => {
-            let root = SolanaRoot::new_from_path(path.into());
-            let path = root.get_root_path().join("farf/bin");
-            (root, path)
+    let cluster_data_root = ClusterDataRoot::new_from_path(environment_config.cluster_data_path);
+    check_directory(cluster_data_root.get_root_path(), "Cluster data root")?;
+    let exec_path = cluster_data_root
+        .get_root_path()
+        .join(format!("{SOLANA_RELEASE}/bin"));
+    let agave_repo_path: Option<PathBuf> = match &deploy_method {
+        DeployMethod::Local(agave_path) => {
+            let agave_path: PathBuf = agave_path.into();
+            check_directory(&agave_path, "Agave repo")?;
+            Some(agave_path)
         }
-        DeployMethod::ReleaseChannel(_) => {
-            // unwrap safe since required if release-channel used
-            let root =
-                SolanaRoot::new_from_path(environment_config.build_directory.unwrap().clone());
-            let path = root.get_root_path().join("solana-release/bin");
-            (root, path)
-        }
+        DeployMethod::ReleaseChannel(_) => None,
     };
 
     let build_type: BuildType = matches.value_of_t("build_type").unwrap();
 
-    if let Ok(metadata) = fs::metadata(solana_root.get_root_path()) {
-        if !metadata.is_dir() {
-            return Err(format!(
-                "Build path is not a directory: {}",
-                solana_root.get_root_path().display()
-            )
-            .into());
-        }
-    } else {
-        return Err(format!(
-            "Build directory not found: {}",
-            solana_root.get_root_path().display()
-        )
-        .into());
-    }
-
     let build_config = BuildConfig::new(
         deploy_method.clone(),
         build_type.clone(),
-        solana_root.get_root_path(),
+        cluster_data_root.get_root_path(),
+        agave_repo_path,
     );
 
     let genesis_flags = GenesisFlags {
@@ -530,36 +524,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .into());
     }
 
-    let config_directory = solana_root.get_root_path().join("config-k8s");
-    let mut genesis = Genesis::new(config_directory.clone(), genesis_flags);
+    let deploy_bootstrap_validator = !matches.is_present("no_bootstrap");
+    let config_directory = cluster_data_root.get_root_path().join("config-k8s");
+    let retain_previous_genesis = !deploy_bootstrap_validator;
+    let mut genesis = Genesis::new(
+        config_directory.clone(),
+        genesis_flags,
+        retain_previous_genesis,
+    );
 
-    genesis.generate_faucet()?;
-    info!("Generated faucet account");
+    if deploy_bootstrap_validator {
+        genesis.generate_faucet()?;
+        info!("Generated faucet account");
 
-    genesis.generate_accounts(ValidatorType::Bootstrap, 1)?;
-    info!("Generated bootstrap account");
+        genesis.generate_accounts(ValidatorType::Bootstrap, 1, None)?;
+        info!("Generated bootstrap account");
 
-    genesis.create_client_accounts(
-        client_config.num_clients,
-        &client_config.bench_tps_args,
-        DEFAULT_CLIENT_LAMPORTS_PER_SIGNATURE,
-        &config_directory,
-        &deploy_method,
-        solana_root.get_root_path(),
-    )?;
-    info!("Client accounts created");
-
-    // creates genesis and writes to binary file
-    genesis
-        .generate(solana_root.get_root_path(), &build_path)
-        .await?;
-    info!("Genesis created");
+        // creates genesis and writes to binary file
+        genesis
+            .generate(cluster_data_root.get_root_path(), &exec_path)
+            .await?;
+        info!("Genesis created");
+    }
 
     // generate standard validator accounts
-    genesis.generate_accounts(ValidatorType::Standard, num_validators)?;
+    genesis.generate_accounts(ValidatorType::Standard, num_validators, Some(&image_tag))?;
     info!("Generated {num_validators} validator account(s)");
 
-    genesis.generate_accounts(ValidatorType::RPC, num_rpc_nodes)?;
+    genesis.generate_accounts(ValidatorType::RPC, num_rpc_nodes, Some(&image_tag))?;
     info!("Generated {num_rpc_nodes} rpc account(s)");
 
     let ledger_dir = config_directory.join("bootstrap-validator");
@@ -568,23 +560,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Shred Version: {shred_version}");
 
     //unwraps are safe here. since their requirement is enforced by argmatches
-    let docker = DockerConfig::new(
-        matches.value_of("base_image").unwrap().to_string(),
-        deploy_method,
-    );
+    let docker = DockerConfig::new(matches.value_of("base_image").unwrap().to_string());
 
     let registry_name = matches.value_of("registry_name").unwrap().to_string();
     let image_name = matches.value_of("image_name").unwrap().to_string();
 
     let mut cluster_images = ClusterImages::default();
-
-    let bootstrap_validator = Validator::new(DockerImage::new(
-        registry_name.clone(),
-        ValidatorType::Bootstrap,
-        image_name.clone(),
-        image_tag.clone(),
-    ));
-    cluster_images.set_item(bootstrap_validator, ValidatorType::Bootstrap);
+    if deploy_bootstrap_validator {
+        let bootstrap_validator = Validator::new(DockerImage::new(
+            registry_name.clone(),
+            ValidatorType::Bootstrap,
+            image_name.clone(),
+            image_tag.clone(),
+        ));
+        cluster_images.set_item(bootstrap_validator, ValidatorType::Bootstrap);
+    }
 
     if num_validators > 0 {
         let validator = Validator::new(DockerImage::new(
@@ -606,6 +596,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         cluster_images.set_item(rpc_node, ValidatorType::RPC);
     }
 
+    if client_config.num_clients > 0 {
+        genesis.create_client_accounts(
+            client_config.num_clients,
+            &client_config.bench_tps_args,
+            DEFAULT_CLIENT_LAMPORTS_PER_SIGNATURE,
+            &config_directory,
+            cluster_data_root.get_root_path(),
+        )?;
+        info!("Client accounts created");
+    }
+
     for client_index in 0..client_config.num_clients {
         let client = Validator::new(DockerImage::new(
             registry_name.clone(),
@@ -617,7 +618,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     for v in cluster_images.get_all() {
-        docker.build_image(solana_root.get_root_path(), v.image())?;
+        docker.build_image(cluster_data_root.get_root_path(), v.image())?;
         info!("Built {} image", v.validator_type());
     }
 
@@ -625,94 +626,99 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Pushed {} docker images", cluster_images.get_all().count());
 
     // metrics secret create once and use by all pods
-    if kub_controller.metrics.is_some() {
+    // do not redploy this service for heterogeneous clusters
+    if kub_controller.metrics.is_some() && deploy_bootstrap_validator {
         let metrics_secret = kub_controller.create_metrics_secret()?;
         kub_controller.deploy_secret(&metrics_secret).await?;
     };
 
-    let bootstrap_validator = cluster_images.bootstrap()?;
-    let secret =
-        kub_controller.create_bootstrap_secret("bootstrap-accounts-secret", &config_directory)?;
-    bootstrap_validator.set_secret(secret);
+    if deploy_bootstrap_validator {
+        let bootstrap_validator = cluster_images.bootstrap()?;
+        let secret = kub_controller
+            .create_bootstrap_secret("bootstrap-accounts-secret", &config_directory)?;
+        bootstrap_validator.set_secret(secret);
 
-    kub_controller
-        .deploy_secret(bootstrap_validator.secret())
-        .await?;
-    info!("Deployed Bootstrap Secret");
+        kub_controller
+            .deploy_secret(bootstrap_validator.secret())
+            .await?;
+        info!("Deployed Bootstrap Secret");
 
-    // Create Bootstrap labels
-    // Bootstrap needs two labels, one for each service.
-    // One for Load Balancer, one direct
-    let identity_path = config_directory.join("bootstrap-validator/identity.json");
-    let bootstrap_keypair =
-        read_keypair_file(identity_path).expect("Failed to read bootstrap keypair file");
-    kub_controller.add_known_validator(bootstrap_keypair.pubkey());
+        // Create Bootstrap labels
+        // Bootstrap needs two labels, one for each service.
+        // One for Load Balancer, one direct
+        let identity_path = config_directory.join("bootstrap-validator/identity.json");
+        let bootstrap_keypair =
+            read_keypair_file(identity_path).expect("Failed to read bootstrap keypair file");
+        kub_controller.add_known_validator(bootstrap_keypair.pubkey());
 
-    bootstrap_validator.add_label(
-        "load-balancer/name",
-        "load-balancer-selector",
-        LabelType::Service,
-    );
-    bootstrap_validator.add_label(
-        "service/name",
-        "bootstrap-validator-selector",
-        LabelType::Service,
-    );
-    bootstrap_validator.add_label(
-        "validator/type",
-        bootstrap_validator.validator_type().to_string(),
-        LabelType::Info,
-    );
-    bootstrap_validator.add_label(
-        "validator/identity",
-        bootstrap_keypair.pubkey().to_string(),
-        LabelType::Info,
-    );
-
-    // create bootstrap replica set
-    let replica_set = kub_controller.create_bootstrap_validator_replica_set(
-        bootstrap_validator.image(),
-        bootstrap_validator.secret().metadata.name.clone(),
-        &bootstrap_validator.all_labels(),
-    )?;
-    bootstrap_validator.set_replica_set(replica_set);
-
-    // deploy bootstrap replica set
-    kub_controller
-        .deploy_replicas_set(bootstrap_validator.replica_set())
-        .await?;
-    info!("Deployed {}", bootstrap_validator.replica_set_name());
-
-    // create and deploy bootstrap-service
-    let bootstrap_service = kub_controller.create_bootstrap_service(
-        "bootstrap-validator-service",
-        bootstrap_validator.service_labels(),
-    );
-    kub_controller.deploy_service(&bootstrap_service).await?;
-    info!("Deployed Bootstrap Balidator Service");
-
-    // load balancer service. only create one and use for all bootstrap/rpc nodes
-    // service selector matches bootstrap selector
-    let load_balancer_label =
-        kub_controller.create_selector("load-balancer/name", "load-balancer-selector");
-    //create load balancer
-    let load_balancer = kub_controller
-        .create_validator_load_balancer("bootstrap-and-rpc-node-lb-service", &load_balancer_label);
-
-    //deploy load balancer
-    kub_controller.deploy_service(&load_balancer).await?;
-    info!("Deployed Load Balancer Service");
-
-    // wait for bootstrap replicaset to deploy
-    while !kub_controller
-        .is_replica_set_ready(bootstrap_validator.replica_set_name().as_str())
-        .await?
-    {
-        info!(
-            "replica set: {} not ready...",
-            bootstrap_validator.replica_set_name()
+        bootstrap_validator.add_label(
+            "load-balancer/name",
+            "load-balancer-selector",
+            LabelType::Service,
         );
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        bootstrap_validator.add_label(
+            "service/name",
+            "bootstrap-validator-selector",
+            LabelType::Service,
+        );
+        bootstrap_validator.add_label(
+            "validator/type",
+            bootstrap_validator.validator_type().to_string(),
+            LabelType::Info,
+        );
+        bootstrap_validator.add_label(
+            "validator/identity",
+            bootstrap_keypair.pubkey().to_string(),
+            LabelType::Info,
+        );
+
+        // create bootstrap replica set
+        let replica_set = kub_controller.create_bootstrap_validator_replica_set(
+            bootstrap_validator.image(),
+            bootstrap_validator.secret().metadata.name.clone(),
+            &bootstrap_validator.all_labels(),
+        )?;
+        bootstrap_validator.set_replica_set(replica_set);
+
+        // deploy bootstrap replica set
+        kub_controller
+            .deploy_replicas_set(bootstrap_validator.replica_set())
+            .await?;
+        info!("Deployed {}", bootstrap_validator.replica_set_name());
+
+        // create and deploy bootstrap-service
+        let bootstrap_service = kub_controller.create_bootstrap_service(
+            "bootstrap-validator-service",
+            bootstrap_validator.service_labels(),
+        );
+        kub_controller.deploy_service(&bootstrap_service).await?;
+        info!("Deployed Bootstrap Balidator Service");
+
+        // load balancer service. only create one and use for all bootstrap/rpc nodes
+        // service selector matches bootstrap selector
+        let load_balancer_label =
+            kub_controller.create_selector("load-balancer/name", "load-balancer-selector");
+        //create load balancer
+        let load_balancer = kub_controller.create_validator_load_balancer(
+            "bootstrap-and-rpc-node-lb-service",
+            &load_balancer_label,
+        );
+
+        //deploy load balancer
+        kub_controller.deploy_service(&load_balancer).await?;
+        info!("Deployed Load Balancer Service");
+
+        // wait for bootstrap replicaset to deploy
+        while !kub_controller
+            .is_replica_set_ready(bootstrap_validator.replica_set_name().as_str())
+            .await?
+        {
+            info!(
+                "replica set: {} not ready...",
+                bootstrap_validator.replica_set_name()
+            );
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        }
     }
 
     if num_rpc_nodes > 0 {
@@ -726,7 +732,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             info!("Deployed RPC Node {rpc_index} Secret");
 
             let identity_path =
-                config_directory.join(format!("rpc-node-identity-{rpc_index}.json"));
+                config_directory.join(format!("rpc-node-identity-{image_tag}-{rpc_index}.json"));
             let rpc_keypair =
                 read_keypair_file(identity_path).expect("Failed to read rpc-node keypair file");
 
@@ -801,8 +807,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             kub_controller.deploy_secret(validator.secret()).await?;
             info!("Deployed Validator {validator_index} Secret");
 
-            let identity_path =
-                config_directory.join(format!("validator-identity-{validator_index}.json"));
+            let identity_path = config_directory.join(format!(
+                "validator-identity-{image_tag}-{validator_index}.json"
+            ));
             let validator_keypair =
                 read_keypair_file(identity_path).expect("Failed to read validator keypair file");
 

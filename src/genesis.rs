@@ -1,7 +1,5 @@
 use {
-    crate::{
-        fetch_spl, new_spinner_progress_bar, release::DeployMethod, ValidatorType, SUN, WRITING,
-    },
+    crate::{fetch_spl, new_spinner_progress_bar, ValidatorType, SOLANA_RELEASE, SUN, WRITING},
     log::*,
     rand::Rng,
     solana_core::gen_keys::GenKeys,
@@ -126,11 +124,15 @@ pub struct Genesis {
 }
 
 impl Genesis {
-    pub fn new(config_dir: PathBuf, flags: GenesisFlags) -> Self {
-        if config_dir.exists() {
-            std::fs::remove_dir_all(&config_dir).unwrap();
+    pub fn new(config_dir: PathBuf, flags: GenesisFlags, retain_previous_genesis: bool) -> Self {
+        // if we are deploying a heterogeneous cluster
+        // all deployments after the first must retain the original genesis directory
+        if !retain_previous_genesis {
+            if config_dir.exists() {
+                std::fs::remove_dir_all(&config_dir).unwrap();
+            }
+            std::fs::create_dir_all(&config_dir).unwrap();
         }
-        std::fs::create_dir_all(&config_dir).unwrap();
 
         let seed: [u8; 32] = rand::thread_rng().gen();
 
@@ -154,6 +156,7 @@ impl Genesis {
         &mut self,
         validator_type: ValidatorType,
         number_of_accounts: usize,
+        deployment_tag: Option<&str>,
     ) -> Result<(), Box<dyn Error>> {
         info!("generating {number_of_accounts} {validator_type} accounts...");
 
@@ -169,6 +172,18 @@ impl Genesis {
             }
         };
 
+        let account_types: Vec<String> = if let Some(tag) = deployment_tag {
+            account_types
+                .into_iter()
+                .map(|acct| format!("{}-{}", acct, tag))
+                .collect()
+        } else {
+            account_types
+                .into_iter()
+                .map(|acct| acct.to_string())
+                .collect()
+        };
+
         let total_accounts_to_generate = number_of_accounts * account_types.len();
         let keypairs = self
             .key_generator
@@ -182,12 +197,12 @@ impl Genesis {
     fn write_accounts_to_file(
         &self,
         validator_type: &ValidatorType,
-        account_types: &[&str],
+        account_types: &[String],
         keypairs: &[Keypair],
     ) -> Result<(), Box<dyn Error>> {
         for (i, keypair) in keypairs.iter().enumerate() {
             let account_index = i / account_types.len();
-            let account = account_types[i % account_types.len()];
+            let account = &account_types[i % account_types.len()];
             let filename = match validator_type {
                 ValidatorType::Bootstrap => {
                     format!("{validator_type}/{account}.json")
@@ -210,7 +225,6 @@ impl Genesis {
         bench_tps_args: &[String],
         target_lamports_per_signature: u64,
         config_dir: &Path,
-        deploy_method: &DeployMethod,
         solana_root_path: &Path,
     ) -> Result<(), Box<dyn Error>> {
         if number_of_clients == 0 {
@@ -230,7 +244,6 @@ impl Genesis {
                     config_dir,
                     target_lamports_per_signature,
                     bench_tps_args,
-                    deploy_method,
                     solana_root_path,
                 )
             })
@@ -258,12 +271,12 @@ impl Genesis {
         config_dir: &Path,
         target_lamports_per_signature: u64,
         bench_tps_args: &[String],
-        deploy_method: &DeployMethod,
         solana_root_path: &Path,
     ) -> Result<Child, Box<dyn Error>> {
         info!("client account: {client_index}");
         let mut args = Vec::new();
         let account_path = config_dir.join(format!("bench-tps-{client_index}.yml"));
+        debug!("account path: {account_path:?}");
         args.push("--write-client-keys".to_string());
         args.push(account_path.into_os_string().into_string().map_err(|err| {
             std::io::Error::new(
@@ -276,11 +289,14 @@ impl Genesis {
 
         args.extend_from_slice(bench_tps_args);
 
-        let executable_path = if let DeployMethod::ReleaseChannel(_) = deploy_method {
-            solana_root_path.join("solana-release/bin/solana-bench-tps")
-        } else {
-            solana_root_path.join("farf/bin/solana-bench-tps")
-        };
+        let executable_path =
+            solana_root_path.join(format!("{SOLANA_RELEASE}/bin/solana-bench-tps"));
+
+        debug!("create client accounts exec path: {executable_path:?}, args: ");
+        for arg in &args {
+            debug!("{arg}");
+        }
+
         let child = Command::new(executable_path)
             .args(args)
             .stdout(Stdio::null())
@@ -369,22 +385,6 @@ impl Genesis {
             args.push(lamports_per_signature.to_string());
         }
 
-        if self.config_dir.join("client-accounts.yml").exists() {
-            args.push("--primordial-accounts-file".to_string());
-            args.push(
-                self.config_dir
-                    .join("client-accounts.yml")
-                    .into_os_string()
-                    .into_string()
-                    .map_err(|err| {
-                        std::io::Error::new(
-                            std::io::ErrorKind::InvalidData,
-                            format!("Invalid Unicode data in path: {:?}", err),
-                        )
-                    })?,
-            );
-        }
-
         Ok(args)
     }
 
@@ -401,7 +401,7 @@ impl Genesis {
     pub async fn generate(
         &mut self,
         solana_root_path: &Path,
-        build_path: &Path,
+        exec_path: &Path,
     ) -> Result<(), Box<dyn Error>> {
         let mut args = self.setup_genesis_flags()?;
         let mut spl_args = self.setup_spl_args(solana_root_path).await?;
@@ -410,7 +410,11 @@ impl Genesis {
         let progress_bar = new_spinner_progress_bar();
         progress_bar.set_message(format!("{SUN}Building Genesis..."));
 
-        let executable_path = build_path.join("solana-genesis");
+        debug!("genesis args:");
+        for arg in &args {
+            debug!("{arg}");
+        }
+        let executable_path = exec_path.join("solana-genesis");
         let output = Command::new(executable_path)
             .args(&args)
             .output()

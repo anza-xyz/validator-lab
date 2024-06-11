@@ -654,7 +654,6 @@ identity=rpc-node-accounts/identity.json
 no_restart=0
 gossip_entrypoint=$BOOTSTRAP_GOSSIP_ADDRESS
 ledger_dir=/home/solana/ledger
-# faucet_address=$BOOTSTRAP_FAUCET_ADDRESS
 faucet_address=$LOAD_BALANCER_FAUCET_ADDRESS
 
 # Define the paths to the validator cli. pre 1.18 is `solana-validator`. post 1.18 is `agave-validator`
@@ -990,9 +989,6 @@ while [[ -n $1 ]]; do
   fi
 done
 
-echo "get airdrop for client"
-solana airdrop 5000000 -k ./client-accounts/identity.json  -u "http://$LOAD_BALANCER_RPC_ADDRESS"
-
 missing() {
   echo "Error: $1 not specified"
   exit 1
@@ -1025,11 +1021,36 @@ bench-tps)
   url="$entrypointIp:8899"
 
   args+=(--bind-address "$entrypointIp")
-  args+=(--client-node-id ./client-accounts/identity.json)
+  # use high staked node to get higher TPS
+  args+=(--client-node-id ./client-accounts/bootstrap-identity.json)
+  
+  // do not append --sustained if already passed in
+  if [[ ! "$benchTpsExtraArgs" =~ --sustained ]]; then
+    args+=(--sustained)
+  fi
+
+  # check solana-bench-tps version and use correct flag
+  version_output=$(solana-bench-tps --version)
+  version=$(echo $version_output | awk '{print $2}')
+  version_ge() {
+    # Compare two version strings
+    # Usage: version_ge 2.0.0 1.18.14
+    # Returns 0 if version 1 >= version 2, 1 otherwise
+    local v1=$(echo "$1" | awk -F. '{ printf("%d%03d%03d", $1,$2,$3); }')
+    local v2=$(echo "$2" | awk -F. '{ printf("%d%03d%03d", $1,$2,$3); }')
+    [[ "$v1" -ge "$v2" ]]
+  }
+
+  # Check if the version is >= v2.0.0
+  # --identity is deprecated in v2.0.0
+  if version_ge "$version" "2.0.0"; then
+    args+=(--authority ./client-accounts/faucet.json)
+  else
+    args+=(--identity ./client-accounts/faucet.json)
+  fi
 
   clientCommand="\
     solana-bench-tps \
-      --sustained \
       $benchTpsExtraArgs \
       --read-client-keys ./client-accounts.yml \
       --url "http://$url"

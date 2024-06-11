@@ -16,18 +16,19 @@ use {
 };
 
 const UPGRADEABLE_LOADER: &str = "BPFLoaderUpgradeab1e11111111111111111111111";
+pub const SOLANA_RELEASE: &str = "solana-release";
 
 #[derive(Clone, Debug)]
 pub struct EnvironmentConfig<'a> {
     pub namespace: &'a str,
-    pub build_directory: Option<PathBuf>, // path to the validator-lab directory
+    pub cluster_data_path: PathBuf, // path to cluster_data
 }
 
-pub struct SolanaRoot {
+pub struct ClusterDataRoot {
     root_path: PathBuf,
 }
 
-impl SolanaRoot {
+impl ClusterDataRoot {
     pub fn new_from_path(path: PathBuf) -> Self {
         Self { root_path: path }
     }
@@ -300,4 +301,15 @@ pub fn parse_and_format_bench_tps_args(bench_tps_args: Option<&str>) -> Vec<Stri
     } else {
         Vec::new() // Return empty vec if no args provided
     }
+}
+
+pub fn check_directory(path: &Path, description: &str) -> Result<(), Box<dyn std::error::Error>> {
+    if let Ok(metadata) = std::fs::metadata(path) {
+        if !metadata.is_dir() {
+            return Err(format!("{} is not a directory: {}", description, path.display()).into());
+        }
+    } else {
+        return Err(format!("{} directory not found: {}", description, path.display()).into());
+    }
+    Ok(())
 }
