@@ -94,7 +94,7 @@ impl BuildConfig {
     fn build(&self) -> Result<String, Box<dyn Error>> {
         let agave_path = match &self.agave_repo_path {
             Some(path) => path.clone(),
-            None => return Err("Can't build() with agave_repo_path == None".into()),
+            None => return Err("An agave repo path must be configured to build, please specify `--cluster-data-path`".into()),
         };
 
         let start_time = Instant::now();

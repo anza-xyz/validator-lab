@@ -654,7 +654,6 @@ identity=rpc-node-accounts/identity.json
 no_restart=0
 gossip_entrypoint=$BOOTSTRAP_GOSSIP_ADDRESS
 ledger_dir=/home/solana/ledger
-# faucet_address=$BOOTSTRAP_FAUCET_ADDRESS
 faucet_address=$LOAD_BALANCER_FAUCET_ADDRESS
 
 # Define the paths to the validator cli. pre 1.18 is `solana-validator`. post 1.18 is `agave-validator`
@@ -990,9 +989,6 @@ while [[ -n $1 ]]; do
   fi
 done
 
-echo "get airdrop for client"
-solana airdrop 5000000 -k ./client-accounts/identity.json  -u "http://$LOAD_BALANCER_RPC_ADDRESS"
-
 missing() {
   echo "Error: $1 not specified"
   exit 1
@@ -1025,7 +1021,8 @@ bench-tps)
   url="$entrypointIp:8899"
 
   args+=(--bind-address "$entrypointIp")
-  args+=(--client-node-id ./client-accounts/swqos.json) # bootstrap validator
+  # use high staked node to get higher TPS
+  args+=(--client-node-id ./client-accounts/bootstrap-identity.json)
   
   // do not append --sustained if already passed in
   if [[ ! "$benchTpsExtraArgs" =~ --sustained ]]; then
@@ -1047,9 +1044,9 @@ bench-tps)
   # Check if the version is >= v2.0.0
   # --identity is deprecated in v2.0.0
   if version_ge "$version" "2.0.0"; then
-    args+=(--authority ./client-accounts/identity.json)
+    args+=(--authority ./client-accounts/faucet.json)
   else
-    args+=(--identity ./client-accounts/identity.json)
+    args+=(--identity ./client-accounts/faucet.json)
   fi
 
   clientCommand="\

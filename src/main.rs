@@ -291,11 +291,6 @@ fn parse_matches() -> clap::ArgMatches {
                 .value_name("NUM")
                 .help("Client Config. Optional: Wait for NUM nodes to converge"),
         )
-        .arg(
-            Arg::with_name("run_client")
-                .long("run-client")
-                .help("Run the client(s)"),
-        )
         // Heterogeneous Cluster Config
         .arg(
             Arg::with_name("no_bootstrap")
@@ -387,7 +382,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .parse()
                     .expect("Invalid value for client_wait_for_n_nodes")
             }),
-        run_client: matches.is_present("run_client"),
     };
 
     let deploy_method = if let Some(local_path) = matches.value_of("local_path") {
@@ -529,30 +523,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .into());
     }
 
-    let no_bootstrap = matches.is_present("no_bootstrap");
+    let deploy_bootstrap_validator = !matches.is_present("no_bootstrap");
     let config_directory = cluster_data_root.get_root_path().join("config-k8s");
-    let retain_previous_genesis = no_bootstrap;
+    let retain_previous_genesis = !deploy_bootstrap_validator;
     let mut genesis = Genesis::new(
         config_directory.clone(),
         genesis_flags,
         retain_previous_genesis,
     );
 
-    if !no_bootstrap {
+    if deploy_bootstrap_validator {
         genesis.generate_faucet()?;
         info!("Generated faucet account");
 
         genesis.generate_accounts(ValidatorType::Bootstrap, 1, None)?;
         info!("Generated bootstrap account");
-
-        genesis.create_client_accounts(
-            client_config.num_clients,
-            &client_config.bench_tps_args,
-            DEFAULT_CLIENT_LAMPORTS_PER_SIGNATURE,
-            &config_directory,
-            cluster_data_root.get_root_path(),
-        )?;
-        info!("Client accounts created");
 
         // creates genesis and writes to binary file
         genesis
@@ -580,7 +565,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let image_name = matches.value_of("image_name").unwrap().to_string();
 
     let mut cluster_images = ClusterImages::default();
-    if !no_bootstrap {
+    if deploy_bootstrap_validator {
         let bootstrap_validator = Validator::new(DockerImage::new(
             registry_name.clone(),
             ValidatorType::Bootstrap,
@@ -610,6 +595,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         cluster_images.set_item(rpc_node, ValidatorType::RPC);
     }
 
+    if client_config.num_clients > 0 {
+        genesis.create_client_accounts(
+            client_config.num_clients,
+            &client_config.bench_tps_args,
+            DEFAULT_CLIENT_LAMPORTS_PER_SIGNATURE,
+            &config_directory,
+            cluster_data_root.get_root_path(),
+        )?;
+        info!("Client accounts created");
+    }
+
     for client_index in 0..client_config.num_clients {
         let client = Validator::new(DockerImage::new(
             registry_name.clone(),
@@ -630,12 +626,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // metrics secret create once and use by all pods
     // do not redploy this service for heterogeneous clusters
-    if kub_controller.metrics.is_some() && !no_bootstrap {
+    if kub_controller.metrics.is_some() && deploy_bootstrap_validator {
         let metrics_secret = kub_controller.create_metrics_secret()?;
         kub_controller.deploy_secret(&metrics_secret).await?;
     };
 
-    if !no_bootstrap {
+    if deploy_bootstrap_validator {
         let bootstrap_validator = cluster_images.bootstrap()?;
         let secret = kub_controller
             .create_bootstrap_secret("bootstrap-accounts-secret", &config_directory)?;
@@ -853,13 +849,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             kub_controller.deploy_service(&validator_service).await?;
             info!("Deployed Validator Service ({validator_index})");
         }
-    }
-
-    if !client_config.run_client {
-        if cluster_images.get_clients().count() > 0 {
-            info!("--run-client not set. Clients not deployed");
-        }
-        return Ok(());
     }
 
     for client in cluster_images.get_clients_mut() {

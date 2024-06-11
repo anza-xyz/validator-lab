@@ -292,6 +292,11 @@ impl Genesis {
         let executable_path =
             solana_root_path.join(format!("{SOLANA_RELEASE}/bin/solana-bench-tps"));
 
+        debug!("create client accounts exec path: {executable_path:?}, args: ");
+        for arg in &args {
+            debug!("{arg}");
+        }
+
         let child = Command::new(executable_path)
             .args(args)
             .stdout(Stdio::null())
@@ -380,22 +385,6 @@ impl Genesis {
             args.push(lamports_per_signature.to_string());
         }
 
-        if self.config_dir.join("client-accounts.yml").exists() {
-            args.push("--primordial-accounts-file".to_string());
-            args.push(
-                self.config_dir
-                    .join("client-accounts.yml")
-                    .into_os_string()
-                    .into_string()
-                    .map_err(|err| {
-                        std::io::Error::new(
-                            std::io::ErrorKind::InvalidData,
-                            format!("Invalid Unicode data in path: {:?}", err),
-                        )
-                    })?,
-            );
-        }
-
         Ok(args)
     }
 
@@ -421,6 +410,10 @@ impl Genesis {
         let progress_bar = new_spinner_progress_bar();
         progress_bar.set_message(format!("{SUN}Building Genesis..."));
 
+        debug!("genesis args:");
+        for arg in &args {
+            debug!("{arg}");
+        }
         let executable_path = exec_path.join("solana-genesis");
         let output = Command::new(executable_path)
             .args(&args)

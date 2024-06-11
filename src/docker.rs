@@ -236,18 +236,9 @@ COPY --chown=solana:solana ./config-k8s/bench-tps-{index}.yml /home/solana/clien
                     Err(format!("{bench_tps_path:?} does not exist!").into())
                 }
             }
-            ValidatorType::Bootstrap => {
-                let client_accounts_path = solana_root_path.join("config-k8s/client-accounts.yml");
-                if client_accounts_path.exists() {
-                    Ok(r#"
-COPY --chown=solana:solana ./config-k8s/client-accounts.yml /home/solana
-                    "#
-                    .to_string())
-                } else {
-                    Ok("".to_string())
-                }
+            ValidatorType::Bootstrap | ValidatorType::Standard | ValidatorType::RPC => {
+                Ok("".to_string())
             }
-            ValidatorType::Standard | ValidatorType::RPC => Ok("".to_string()),
         }
     }
 
