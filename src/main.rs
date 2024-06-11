@@ -70,6 +70,7 @@ fn parse_matches() -> clap::ArgMatches {
                 .long("cluster-data-path")
                 .takes_value(true)
                 .required(true)
+                .value_name("DIRECTORY")
                 .help("Absolute path to cluster_data directory for storing accounts, genesis, etc
                 e.g. /home/sol/validator-lab-build"),
         )

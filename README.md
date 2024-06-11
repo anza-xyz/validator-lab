@@ -44,6 +44,9 @@ cargo run --bin cluster --
 2) Genesis
 3) Validator, client, and rpc Dockerfiles
 
+After deploying a cluster with a bootstrap, 2 clients, 2 validators, and 3 rpc nodes all running v1.18.13, your `<cluster-data-path>` directory will look something like:
+![Cluster Data Path Directory](cluster_data_path_tree.png)
+
 #### Build from Local Repo and Configure Genesis and Bootstrap and Validator Image
 Example:
 ```
