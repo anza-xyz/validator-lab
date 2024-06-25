@@ -19,9 +19,9 @@ pub enum DeployMethod {
     Local(String),
     ReleaseChannel(String),
     Commit(
-        /* commit */ String,
-        /* gh username */ String,
-        /* repo name */ String,
+        String, /* commit */
+        String, /* gh username */
+        String, /* repo name */
     ),
 }
 
@@ -102,43 +102,6 @@ impl BuildConfig {
         Ok(())
     }
 
-    fn clone_and_checkout(&self) -> Result<PathBuf, Box<dyn Error>> {
-        let repo_path = match &self.deploy_method {
-            DeployMethod::Commit(commit, user, repo_name) => {
-                let git_repo = format!("https://github.com/{}/{}.git", user, repo_name);
-                let repo_path = self.cluster_root_path.join(repo_name);
-                if repo_path.exists() {
-                    std::fs::remove_dir_all(&repo_path).unwrap();
-                }
-                std::fs::create_dir_all(&repo_path).unwrap();
-
-                let progress_bar = new_spinner_progress_bar();
-                progress_bar.set_message(format!("{CLONE}Cloning Repo..."));
-                Repository::clone(&git_repo, repo_path.clone())?;
-                progress_bar.finish_and_clear();
-                info!(
-                    "Successfully cloned repo: {git_repo} into {}",
-                    self.cluster_root_path.join("repo_name").display()
-                );
-
-                let repo = Repository::open(repo_path.clone())?;
-                let git_commit = repo.find_commit(Oid::from_str(commit).unwrap())?;
-                repo.checkout_tree(git_commit.as_object(), None)?;
-                repo.set_head_detached(git_commit.id())?;
-                info!("Checked out commit: {commit}");
-                repo_path
-            }
-            DeployMethod::Local(_) | DeployMethod::ReleaseChannel(_) => {
-                return Err(format!(
-                    "Cannot call clone_and_checkout for {:?}",
-                    self.deploy_method
-                )
-                .into())
-            }
-        };
-        Ok(repo_path)
-    }
-
     fn build(&self) -> Result<String, Box<dyn Error>> {
         let start_time = Instant::now();
 
@@ -209,6 +172,46 @@ impl BuildConfig {
 
         info!("Build took {:.3?} seconds", start_time.elapsed());
         Ok(label)
+    }
+
+    fn clone_and_checkout(&self) -> Result<PathBuf, Box<dyn Error>> {
+        let repo_path = match &self.deploy_method {
+            DeployMethod::Commit(commit, user, repo_name) => {
+                let repo_dir_name = format!("{repo_name}_{user}");
+                let git_repo = format!("https://github.com/{}/{}.git", user, repo_name);
+                let repo_path = self.cluster_root_path.join(repo_dir_name);
+
+                if !repo_path.exists() {
+                    std::fs::create_dir_all(&repo_path).unwrap();
+                    let progress_bar = new_spinner_progress_bar();
+                    progress_bar.set_message(format!("{CLONE}Cloning Repo..."));
+                    match Repository::clone(&git_repo, repo_path.clone()) {
+                        Ok(_) => (),
+                        Err(e) => return Err(format!("Failed to clone {git_repo}. Is the github user and repo name correct?\nErr: {e}").into())
+                    }
+                    progress_bar.finish_and_clear();
+                    info!(
+                        "Successfully cloned repo: {git_repo} into {}",
+                        self.cluster_root_path.join("repo_name").display()
+                    );
+                }
+
+                let repo = Repository::open(repo_path.clone())?;
+                let git_commit = repo.find_commit(Oid::from_str(commit).unwrap())?;
+                repo.checkout_tree(git_commit.as_object(), None)?;
+                repo.set_head_detached(git_commit.id())?;
+                info!("Checked out commit: {commit}");
+                repo_path
+            }
+            DeployMethod::Local(_) | DeployMethod::ReleaseChannel(_) => {
+                return Err(format!(
+                    "Cannot call clone_and_checkout for {:?}",
+                    self.deploy_method
+                )
+                .into())
+            }
+        };
+        Ok(repo_path)
     }
 
     async fn download_release_from_channel(

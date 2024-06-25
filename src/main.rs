@@ -67,7 +67,7 @@ fn parse_matches() -> clap::ArgMatches {
                 .takes_value(true)
                 .requires("github_user")
                 .requires("repo_name")
-                .help("Pulls specific commit. e.g. 8db8e60c48ab064c88a76013597f99c9eb25ed74"),
+                .help("Pulls specific commit. must be full commit hash. e.g. 8db8e60c48ab064c88a76013597f99c9eb25ed74"),
         )
         .arg(
             Arg::with_name("github_user")
