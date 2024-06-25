@@ -119,6 +119,7 @@ static ROCKET: Emoji = Emoji("🚀 ", "");
 static SUN: Emoji = Emoji("🌞 ", "");
 static TRUCK: Emoji = Emoji("🚚 ", "");
 static WRITING: Emoji = Emoji("🖊️ ", "");
+static CLONE: Emoji = Emoji("🧜‍♀️ ", "");
 
 /// Creates a new process bar for processing that will take an unknown amount of time
 pub fn new_spinner_progress_bar() -> ProgressBar {
