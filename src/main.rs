@@ -65,13 +65,11 @@ fn parse_matches() -> clap::ArgMatches {
                 .long("commit")
                 .value_name("HASH")
                 .takes_value(true)
-                .requires("github_user")
-                .requires("repo_name")
                 .help("Pulls specific commit. must be full commit hash. e.g. 8db8e60c48ab064c88a76013597f99c9eb25ed74"),
         )
         .arg(
-            Arg::with_name("github_user")
-                .long("github-user")
+            Arg::with_name("github_username")
+                .long("github-username")
                 .takes_value(true)
                 .help("Dictates which github user repo the commit is owned by. e.g. gregcusack"),
         )
@@ -86,6 +84,12 @@ fn parse_matches() -> clap::ArgMatches {
             ArgGroup::new("required_group")
                 .args(&["local_path", "release_channel", "commit"])
                 .required(true),
+        )
+        .group(
+            ArgGroup::with_name("github_args")
+                .args(&["commit", "github_username", "repo_name"])
+                .requires_all(&["commit", "github_username", "repo_name"])
+                .multiple(true)
         )
         .arg(
             Arg::with_name("cluster_data_path")
@@ -412,15 +416,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else if let Some(release_channel) = matches.value_of("release_channel") {
         DeployMethod::ReleaseChannel(release_channel.to_owned())
     } else if let Some(commit) = matches.value_of("commit") {
-        let github_user = matches
-            .value_of("github_user")
-            .expect("User should pass in --github-user <username>");
-        let repo_name = matches.value_of("repo_name").unwrap_or_default();
-        DeployMethod::Commit(
-            commit.to_owned(),
-            github_user.to_owned(),
-            repo_name.to_owned(),
-        )
+        let github_username = matches
+            .value_of("github_username")
+            .expect("User should pass in --github-username <username>");
+        let repo_name = matches.value_of("repo_name").unwrap();
+        DeployMethod::Commit {
+            commit: commit.to_owned(),
+            username: github_username.to_owned(),
+            repo_name: repo_name.to_owned(),
+        }
     } else {
         unreachable!("One of --local-path, --release-channel, or --commit must be provided.");
     };
@@ -435,7 +439,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let agave_path: PathBuf = agave_path.into();
             check_directory(&agave_path, "Agave repo")?;
         }
-        DeployMethod::ReleaseChannel(_) | DeployMethod::Commit(_, _, _) => (),
+        DeployMethod::ReleaseChannel(_) | DeployMethod::Commit { .. } => (),
     };
 
     let build_type: BuildType = matches.value_of_t("build_type").unwrap();

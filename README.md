@@ -43,7 +43,7 @@ cargo run --bin cluster --
 cargo run --bin cluster --
     -n <namespace>
     --commit <git commit: e.g. 8db8e60c48ab064c88a76013597f99c9eb25ed74> # must be full string
-    --github-user <github username: e.g. gregcusack>
+    --github-username <github username: e.g. gregcusack>
     --repo-name <repository to build: e.g. solana | agave. default: solana>
     --cluster-data-path <path-to-directory-to-store-cluster-accounts-genesis-etc>
 ```
