@@ -81,6 +81,7 @@ By here:
 
 - [ ] Other Features
     - [x] Heterogeneous Clusters (i.e. multiple validator versions)
+    - [x] Deploy specific commit
     - [ ] Deploy with user-defined stake distribution
 
 By here:

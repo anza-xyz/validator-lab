@@ -1,6 +1,9 @@
 use {
-    crate::{cat_file, download_to_temp, extract_release_archive, SOLANA_RELEASE},
-    git2::Repository,
+    crate::{
+        cat_file, download_to_temp, extract_release_archive, new_spinner_progress_bar, CLONE,
+        SOLANA_RELEASE,
+    },
+    git2::{FetchOptions, Oid, Remote, RemoteCallbacks, Repository},
     log::*,
     std::{
         error::Error,
@@ -15,6 +18,11 @@ use {
 pub enum DeployMethod {
     Local(String),
     ReleaseChannel(String),
+    Commit {
+        commit: String,
+        username: String,
+        repo_name: String,
+    },
 }
 
 #[derive(PartialEq, EnumString, IntoStaticStr, VariantNames, Clone)]
@@ -30,7 +38,6 @@ pub struct BuildConfig {
     deploy_method: DeployMethod,
     build_type: BuildType,
     cluster_root_path: PathBuf,
-    agave_repo_path: Option<PathBuf>,
     /// solana-release directory holding all solana/agave bins
     install_directory: PathBuf,
 }
@@ -40,7 +47,6 @@ impl BuildConfig {
         deploy_method: DeployMethod,
         build_type: BuildType,
         cluster_root_path: &Path,
-        agave_repo_path: Option<PathBuf>,
     ) -> Self {
         // If the solana-release directory exists and we're not skipping the build, delete it and create a new one.
         let install_directory = cluster_root_path.join(SOLANA_RELEASE);
@@ -52,11 +58,13 @@ impl BuildConfig {
             deploy_method,
             build_type,
             cluster_root_path: cluster_root_path.to_path_buf(),
-            agave_repo_path,
             install_directory,
         }
     }
 
+    /// Sets up build environment
+    /// Builds deployment based on type
+    /// returns image tag.
     pub async fn prepare(&self) -> Result<String, Box<dyn Error>> {
         match &self.deploy_method {
             DeployMethod::ReleaseChannel(channel) => {
@@ -68,9 +76,12 @@ impl BuildConfig {
                 cat_file(&self.install_directory.join("version.yml"))?;
                 Ok(channel.clone())
             }
-            DeployMethod::Local(_) => {
-                let image_tag = self.build()?;
-                Ok(image_tag)
+            DeployMethod::Local(_) => Ok(self.build()?),
+            DeployMethod::Commit { commit, .. } => {
+                if self.build_type == BuildType::Skip {
+                    return Ok(commit[..8].to_string());
+                }
+                Ok(self.build()?)
             }
         }
     }
@@ -92,12 +103,14 @@ impl BuildConfig {
     }
 
     fn build(&self) -> Result<String, Box<dyn Error>> {
-        let agave_path = match &self.agave_repo_path {
-            Some(path) => path.clone(),
-            None => return Err("An agave repo path must be configured to build, please specify `--cluster-data-path`".into()),
+        let start_time = Instant::now();
+
+        let build_path = match &self.deploy_method {
+            DeployMethod::Local(path) => PathBuf::from(path),
+            DeployMethod::Commit { .. } => self.fetch_and_checkout()?,
+            _ => return Err("Unsupported deploy method".into()),
         };
 
-        let start_time = Instant::now();
         if self.build_type != BuildType::Skip {
             let build_variant = if self.build_type == BuildType::Debug {
                 "--debug"
@@ -105,7 +118,7 @@ impl BuildConfig {
                 ""
             };
 
-            let install_script = agave_path.join("scripts/cargo-install-all.sh");
+            let install_script = build_path.join("scripts/cargo-install-all.sh");
             match std::process::Command::new(install_script)
                 .arg(self.install_directory.clone())
                 .arg(build_variant)
@@ -123,7 +136,7 @@ impl BuildConfig {
             }
         }
 
-        let solana_repo = Repository::open(agave_path.as_path())?;
+        let solana_repo = Repository::open(build_path.as_path())?;
         let commit = solana_repo.revparse_single("HEAD")?.id();
         let branch = solana_repo
             .head()?
@@ -159,6 +172,92 @@ impl BuildConfig {
 
         info!("Build took {:.3?} seconds", start_time.elapsed());
         Ok(label)
+    }
+
+    fn fetch_and_checkout(&self) -> Result<PathBuf, Box<dyn Error>> {
+        let repo_path = match &self.deploy_method {
+            DeployMethod::Commit {
+                commit,
+                username: user_name,
+                repo_name,
+            } => {
+                let repo_dir_name = format!("{repo_name}_{user_name}");
+                let git_repo = format!("https://github.com/{user_name}/{repo_name}.git");
+                let repo_path = self.cluster_root_path.join(repo_dir_name);
+
+                if !repo_path.exists() {
+                    self.initialize_repo(&repo_path, &git_repo, commit)?;
+                    info!(
+                        "Successfully initialized and fetched repo: {} into {}",
+                        git_repo,
+                        repo_path.display()
+                    );
+                }
+
+                let repo = Repository::open(repo_path.clone())?;
+                self.checkout_commit(&repo, commit)?;
+                repo_path
+            }
+            DeployMethod::Local(_) | DeployMethod::ReleaseChannel(_) => {
+                return Err(format!(
+                    "Cannot call clone_and_checkout for {:?}",
+                    self.deploy_method
+                )
+                .into())
+            }
+        };
+        Ok(repo_path)
+    }
+
+    fn initialize_repo(
+        &self,
+        repo_path: &Path,
+        git_repo: &str,
+        commit: &str,
+    ) -> Result<(), Box<dyn Error>> {
+        fs::create_dir_all(repo_path)?;
+        let progress_bar = new_spinner_progress_bar();
+        progress_bar.set_message(format!("{CLONE} Fetching Commit..."));
+
+        let repo = Repository::init(repo_path)?;
+        let mut remote = repo.remote("origin", git_repo)?;
+        self.fetch_commit(&mut remote, commit)?;
+
+        progress_bar.finish_and_clear();
+        Ok(())
+    }
+
+    fn checkout_commit(&self, repo: &Repository, commit: &str) -> Result<(), Box<dyn Error>> {
+        match repo.find_commit(Oid::from_str(commit)?) {
+            Ok(git_commit) => {
+                repo.checkout_tree(git_commit.as_object(), None)?;
+                repo.set_head_detached(git_commit.id())?;
+                info!("Checked out commit: {commit}");
+            }
+            Err(_) => {
+                let progress_bar = new_spinner_progress_bar();
+                progress_bar.set_message(format!("{CLONE} Fetching Commit..."));
+
+                // Commit not found locally, so we need to fetch it.
+                let mut remote = repo.find_remote("origin")?;
+                self.fetch_commit(&mut remote, commit)?;
+
+                // Find and checkout commit
+                let git_commit = repo.find_commit(Oid::from_str(commit)?)?;
+                repo.checkout_tree(git_commit.as_object(), None)?;
+                repo.set_head_detached(git_commit.id())?;
+                info!("Fetched and checked out commit: {commit}");
+                progress_bar.finish_and_clear();
+            }
+        }
+        Ok(())
+    }
+
+    fn fetch_commit(&self, remote: &mut Remote, commit: &str) -> Result<(), Box<dyn Error>> {
+        let mut fetch_options = FetchOptions::new();
+        fetch_options.remote_callbacks(RemoteCallbacks::new());
+        remote.fetch(&[commit], Some(&mut fetch_options), None)?;
+        Ok(())
     }
 
     async fn download_release_from_channel(

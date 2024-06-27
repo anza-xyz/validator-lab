@@ -60,10 +60,36 @@ fn parse_matches() -> clap::ArgMatches {
                 .takes_value(true)
                 .help("Pulls specific release version. e.g. v1.17.2"),
         )
+        .arg(
+            Arg::with_name("commit")
+                .long("commit")
+                .value_name("HASH")
+                .takes_value(true)
+                .help("Pulls specific commit. must be full commit hash. e.g. 8db8e60c48ab064c88a76013597f99c9eb25ed74"),
+        )
+        .arg(
+            Arg::with_name("github_username")
+                .long("github-username")
+                .takes_value(true)
+                .help("Dictates which github user repo the commit is owned by. e.g. gregcusack"),
+        )
+        .arg(
+            Arg::with_name("repo_name")
+                .long("repo-name")
+                .takes_value(true)
+                .default_value("solana")
+                .help("Dictates the repo name to pull the commit from. e.g. agave"),
+        )
         .group(
             ArgGroup::new("required_group")
-                .args(&["local_path", "release_channel"])
+                .args(&["local_path", "release_channel", "commit"])
                 .required(true),
+        )
+        .group(
+            ArgGroup::with_name("github_args")
+                .args(&["commit", "github_username", "repo_name"])
+                .requires_all(&["commit", "github_username", "repo_name"])
+                .multiple(true)
         )
         .arg(
             Arg::with_name("cluster_data_path")
@@ -389,8 +415,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         DeployMethod::Local(local_path.to_owned())
     } else if let Some(release_channel) = matches.value_of("release_channel") {
         DeployMethod::ReleaseChannel(release_channel.to_owned())
+    } else if let Some(commit) = matches.value_of("commit") {
+        let github_username = matches
+            .value_of("github_username")
+            .expect("User should pass in --github-username <username>");
+        let repo_name = matches.value_of("repo_name").unwrap();
+        DeployMethod::Commit {
+            commit: commit.to_owned(),
+            username: github_username.to_owned(),
+            repo_name: repo_name.to_owned(),
+        }
     } else {
-        unreachable!("One of --local-path or --release-channel must be provided.");
+        unreachable!("One of --local-path, --release-channel, or --commit must be provided.");
     };
 
     let cluster_data_root = ClusterDataRoot::new_from_path(environment_config.cluster_data_path);
@@ -398,13 +434,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let exec_path = cluster_data_root
         .get_root_path()
         .join(format!("{SOLANA_RELEASE}/bin"));
-    let agave_repo_path: Option<PathBuf> = match &deploy_method {
+    match &deploy_method {
         DeployMethod::Local(agave_path) => {
             let agave_path: PathBuf = agave_path.into();
             check_directory(&agave_path, "Agave repo")?;
-            Some(agave_path)
         }
-        DeployMethod::ReleaseChannel(_) => None,
+        DeployMethod::ReleaseChannel(_) | DeployMethod::Commit { .. } => (),
     };
 
     let build_type: BuildType = matches.value_of_t("build_type").unwrap();
@@ -413,7 +448,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         deploy_method.clone(),
         build_type.clone(),
         cluster_data_root.get_root_path(),
-        agave_repo_path,
     );
 
     let genesis_flags = GenesisFlags {
