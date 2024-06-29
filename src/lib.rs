@@ -46,7 +46,15 @@ struct GenesisProgram<'a> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Display)]
-pub enum ValidatorType {
+pub enum ClientType {
+    #[strum(serialize = "bench-tps-client")]
+    BenchTps,
+    #[strum(serialize = "generic-client")]
+    Generic,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Display)]
+pub enum NodeType {
     #[strum(serialize = "bootstrap-validator")]
     Bootstrap,
     #[strum(serialize = "validator")]
@@ -54,16 +62,16 @@ pub enum ValidatorType {
     #[strum(serialize = "rpc-node")]
     RPC,
     #[strum(serialize = "client")]
-    Client(/* client index */ usize),
+    Client(ClientType, /* client index */ usize),
 }
 
-impl ValidatorType {
+impl NodeType {
     fn script(&self) -> &'static str {
         match self {
-            ValidatorType::Bootstrap => startup_scripts::StartupScripts::bootstrap(),
-            ValidatorType::Standard => startup_scripts::StartupScripts::validator(),
-            ValidatorType::RPC => startup_scripts::StartupScripts::rpc(),
-            ValidatorType::Client(_) => startup_scripts::StartupScripts::client(),
+            NodeType::Bootstrap => startup_scripts::StartupScripts::bootstrap(),
+            NodeType::Standard => startup_scripts::StartupScripts::validator(),
+            NodeType::RPC => startup_scripts::StartupScripts::rpc(),
+            NodeType::Client(_, _) => startup_scripts::StartupScripts::client(),
         }
     }
 }
@@ -284,7 +292,7 @@ pub async fn fetch_spl(solana_root_path: &Path) -> Result<(), Box<dyn std::error
     Ok(())
 }
 
-pub fn parse_and_format_bench_tps_args(bench_tps_args: Option<&str>) -> Vec<String> {
+pub fn parse_and_format_transparent_args(bench_tps_args: Option<&str>) -> Vec<String> {
     if let Some(args) = bench_tps_args {
         let mut val_args: Vec<_> = args
             .split_whitespace()
@@ -311,6 +319,14 @@ pub fn check_directory(path: &Path, description: &str) -> Result<(), Box<dyn std
         }
     } else {
         return Err(format!("{} directory not found: {}", description, path.display()).into());
+    }
+    Ok(())
+}
+
+pub fn validate_docker_image(image: String) -> Result<(), String> {
+    let parts: Vec<&str> = image.split('/').collect();
+    if parts.len() != 2 || !parts[1].contains(':') {
+        return Err("Invalid Docker image format. Expected <repository>/<client-name>:<tag>".into());
     }
     Ok(())
 }

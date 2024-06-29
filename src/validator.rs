@@ -1,5 +1,5 @@
 use {
-    crate::{docker::DockerImage, ValidatorType},
+    crate::{docker::DockerImage, NodeType},
     k8s_openapi::api::{apps::v1::ReplicaSet, core::v1::Secret},
     std::{collections::BTreeMap, string::String},
 };
@@ -10,8 +10,8 @@ pub enum LabelType {
 }
 
 #[derive(Clone)]
-pub struct Validator {
-    validator_type: ValidatorType,
+pub struct Node {
+    node_type: NodeType,
     image: DockerImage,
     secret: Secret,
     info_labels: BTreeMap<String, String>,
@@ -19,10 +19,10 @@ pub struct Validator {
     service_labels: BTreeMap<String, String>,
 }
 
-impl Validator {
+impl Node {
     pub fn new(image: DockerImage) -> Self {
         Self {
-            validator_type: image.validator_type(),
+            node_type: image.node_type(),
             image,
             secret: Secret::default(),
             info_labels: BTreeMap::new(),
@@ -39,8 +39,8 @@ impl Validator {
         &self.secret
     }
 
-    pub fn validator_type(&self) -> &ValidatorType {
-        &self.validator_type
+    pub fn node_type(&self) -> &NodeType {
+        &self.node_type
     }
 
     pub fn add_label<K, V>(&mut self, key: K, value: V, label_type: LabelType)
