@@ -1,4 +1,5 @@
 use {
+    log::*,
     solana_sdk::pubkey::Pubkey,
     std::{ 
         error::Error,
@@ -75,12 +76,7 @@ impl Default for GenericClientConfig {
 
 impl ClientTrait for GenericClientConfig {
     fn generate_client_command_flags(&self) -> Vec<String> {
-        let mut flags = vec![];
-
-        if !self.args.is_empty() {
-            flags.push(self.args.join(" "));
-        }
-        flags
+        self.args.clone()
     }
 
     /// Build command to run on pod deployment 
