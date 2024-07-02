@@ -155,13 +155,13 @@ impl Genesis {
 
     pub fn generate_accounts(
         &mut self,
-        validator_type: NodeType,
+        node_type: NodeType,
         number_of_accounts: usize,
         deployment_tag: Option<&str>,
     ) -> Result<(), Box<dyn Error>> {
-        info!("generating {number_of_accounts} {validator_type} accounts...");
+        info!("generating {number_of_accounts} {node_type} accounts...");
 
-        let account_types = match validator_type {
+        let account_types = match node_type {
             NodeType::Bootstrap | NodeType::Standard => {
                 vec!["identity", "stake-account", "vote-account"]
             }
@@ -190,26 +190,26 @@ impl Genesis {
             .key_generator
             .gen_n_keypairs(total_accounts_to_generate as u64);
 
-        self.write_accounts_to_file(&validator_type, &account_types, &keypairs)?;
+        self.write_accounts_to_file(&node_type, &account_types, &keypairs)?;
 
         Ok(())
     }
 
     fn write_accounts_to_file(
         &self,
-        validator_type: &NodeType,
+        node_type: &NodeType,
         account_types: &[String],
         keypairs: &[Keypair],
     ) -> Result<(), Box<dyn Error>> {
         for (i, keypair) in keypairs.iter().enumerate() {
             let account_index = i / account_types.len();
             let account = &account_types[i % account_types.len()];
-            let filename = match validator_type {
+            let filename = match node_type {
                 NodeType::Bootstrap => {
-                    format!("{validator_type}/{account}.json")
+                    format!("{node_type}/{account}.json")
                 }
                 NodeType::Standard | NodeType::RPC => {
-                    format!("{validator_type}-{account}-{account_index}.json")
+                    format!("{node_type}-{account}-{account_index}.json")
                 }
                 NodeType::Client(_, _) => panic!("Client type not supported"),
             };

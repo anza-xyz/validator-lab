@@ -1,5 +1,5 @@
 use {
-    crate::{validator::Node, NodeType},
+    crate::{node::Node, NodeType},
     std::{error::Error, result::Result},
 };
 

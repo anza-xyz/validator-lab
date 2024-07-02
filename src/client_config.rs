@@ -1,10 +1,6 @@
 use {
-    log::*,
     solana_sdk::pubkey::Pubkey,
-    std::{ 
-        error::Error,
-        path::PathBuf,
-    },
+    std::{error::Error, path::PathBuf},
     strum_macros::Display,
 };
 
@@ -47,31 +43,21 @@ impl ClientTrait for BenchTpsConfig {
     }
 
     fn build_command(&self) -> Result<Vec<String>, Box<dyn Error>> {
-        let mut command = vec!["/home/solana/k8s-cluster-scripts/client-startup-script.sh".to_string()];
+        let mut command =
+            vec!["/home/solana/k8s-cluster-scripts/client-startup-script.sh".to_string()];
         command.extend(self.generate_client_command_flags());
         Ok(command)
     }
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Default, Clone, PartialEq, Debug)]
 pub struct GenericClientConfig {
     pub num_clients: usize,
     pub client_duration_seconds: u64,
     pub args: Vec<String>,
     pub image: String,
     pub executable_path: PathBuf,
-}
-
-impl Default for GenericClientConfig {
-    fn default() -> Self {
-        Self {
-            num_clients: usize::default(),
-            client_duration_seconds: u64::default(),
-            args: Vec::default(),
-            image: String::default(),
-            executable_path: PathBuf::default(),
-        }
-    }
+    pub delay_start: u64,
 }
 
 impl ClientTrait for GenericClientConfig {
@@ -79,9 +65,12 @@ impl ClientTrait for GenericClientConfig {
         self.args.clone()
     }
 
-    /// Build command to run on pod deployment 
+    /// Build command to run on pod deployment
     fn build_command(&self) -> Result<Vec<String>, Box<dyn Error>> {
-        let exec_path_string = self.executable_path.clone().into_os_string()
+        let exec_path_string = self
+            .executable_path
+            .clone()
+            .into_os_string()
             .into_string()
             .map_err(|err| {
                 std::io::Error::new(

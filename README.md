@@ -178,6 +178,88 @@ curl -X POST \
 http://<node-ip>:<external-port>
 ```
 
+## Generic Clients
+Bring your own client and deploy it in a Validator Lab cluster!
+All you need is a containerized version of your client in an accessible docker registry. 
+
+Key points/steps:
+1) [Containerize your client](#Containerize-your-Client)
+2) Any client accounts should be built into the client container image
+3) Client arguments are passed in similar to how they are passed into the bench-tps client. For the generic client, use `--generic-client-args`. 
+
+For example, let's assume we have a client sending spam. And it takes the following arguments:
+```
+/home/solana/spammer-executable --target-node <ip:port> --thread-sleep-ms <ms-between-spam-batches> --spam-mode <client-specific-mode>
+```
+When we go to deploy the generic client, we deploy it in a similar manner to how we deploy the bench-tps client:
+```
+cargo run --bin cluster -- -n <namespace>
+...
+generic-client --docker-image <client-docker-image> --executable-path <path-to-executable-in-docker-image> --delay-start <seconds-after-cluster-is-deployed-before-deploying-client> --generic-client-args 'target-node=<ip:port> thread-sleep-ms=<ms-between-spam-batches> spam-mode=<client-specific-mode>' 
+```
+
+4) Any flag or value the client needs that is cluster specific should be read in from an environment variable. For example, say the client requires the following arguments:
+```
+/home/solana/spammer-executable --target-node <ip:port> --shred-version <version>
+```
+Shred-version is cluster specific; it is not known when you deploy a cluster. Modify the shred-version argument in the client code to read in the environment variable `SHRED_VERSION` from the host.
+Example:
+```
+let default_shred_version = env::var("SHRED_VERSION").unwrap_or_else(|_| "0".to_string());
+...
+.arg(
+    Arg::with_name("shred_version")
+        .long("shred-version")
+        .takes_value(true)
+        .default_value(&default_shred_version)
+        .help("Shred version of cluster to spam"),
+)
+...
+```
+When you deploy a cluster with your client, leave the `--shred-version` command out since it will be read via environment variable:
+```
+cargo run --bin cluster -- -n <namespace>
+...
+generic-client --docker-image <client-docker-image> --executable-path <path-to-executable-in-docker-image> --delay-start <seconds-after-cluster-is-deployed-before-deploying-client> --generic-client-args 'target-node=<ip:port>' 
+```
+
+The following environment variables are available to each non-bootstrap pod:
+```
+NAMESPACE                   # cluster namespace
+BOOTSTRAP_RPC_ADDRESS       # rpc address of bootstrap node
+BOOTSTRAP_GOSSIP_ADDRESS    # gossip address of bootstrap node
+BOOTSTRAP_FAUCET_ADDRESS    # faucet address of bootstrap node
+SHRED_VERSION               # cluster shred version
+```
+^ More environment variables to come!
+
+5) Node naming conventions.
+Say you want to launch your client and send transactions to a specific validator. Kubernetes makes it easy to identify deployed nodes. Node naming conventions:
+```
+<node-name>-service.<namespace>.svc.cluster.local:<port>
+```
+e.g. bootstrap validator RPC port can be reached with:
+```
+bootstrap-validator-service.<namespace>.svc.cluster.local:8899
+```
+and a standard validator can be reached with:
+```
+validator-service-<8-char-commit-or-version>-<validator-index>.<namespace>.svc.cluster.local:<port>
+```
+examples:
+```
+# w/ commit
+validator-service-bd1a5dfb-7.greg.svc.cluster.local:8001
+# or with version
+validator-service-v1.18.16-4.greg.svc.cluster.local:8001
+```
+Say you want to deploy your client with `--target-node <validator-4>` which is running v1.18.16:
+```
+cargo run --bin cluster -- -n <namespace>
+...
+generic-client --docker-image <registry>/<image-name>:<tag> --executable-path <path-to-executable-in-docker-image> --delay-start <seconds-after-cluster-is-deployed-before-deploying-client> --generic-client-args 'target-node=validator-service-v1.18.16-4.greg.svc.cluster.local:8001' 
+```
+
 ## Kubernetes Cheatsheet
 Create namespace:
 ```
@@ -207,4 +289,38 @@ kubectl exec -it -n <namespace> <pod-name> -- /bin/bash
 Get information about pod:
 ```
 kubectl describe pod -n <namespace> <pod-name>
+```
+
+## Containerize your Client
+### Dockerfile Template
+```
+FROM ubuntu:22.04
+RUN apt-get update && apt-get install -y iputils-ping curl vim && \
+    rm -rf /var/lib/apt/lists/* && \
+    useradd -ms /bin/bash solana && \
+    adduser solana sudo
+
+USER solana
+COPY --chown=solana:solana ./target/release/<client-executable> /home/solana/
+COPY --chown=solana:solana ./client-accounts/ /home/solana/client-accounts/
+RUN chmod +x /home/solana/<client-executable>
+WORKDIR /home/solana
+```
+
+### Build client image
+```
+cd <client-directory>
+docker build -t <registry>/<image-name>:<tag> -f <path-to-Dockerfile>/Dockerfile <context-path>
+
+# e.g.
+cd client-spam/
+docker build -t test-registry/client-spam:latest -f docker/Dockerfile .
+```
+
+### Push client image to registry
+```
+docker push <registry>/<image-name>:<tag>
+
+# e.g.
+docker push test-registry/client-spam:latest
 ```

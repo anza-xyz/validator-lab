@@ -10,11 +10,7 @@ use {
     strum::VariantNames,
     validator_lab::{
         check_directory,
-        client_config::{
-            ClientConfig,
-            BenchTpsConfig,
-            GenericClientConfig,
-        },
+        client_config::{BenchTpsConfig, ClientConfig, GenericClientConfig},
         cluster_images::ClusterImages,
         docker::{DockerConfig, DockerImage},
         genesis::{
@@ -25,13 +21,12 @@ use {
         },
         kubernetes::{Kubernetes, PodRequests},
         ledger_helper::LedgerHelper,
+        node::{LabelType, Node},
         parse_and_format_transparent_args,
         release::{BuildConfig, BuildType, DeployMethod},
-        validator::{LabelType, Node},
-        validator_config::ValidatorConfig,
-        ClusterDataRoot, EnvironmentConfig, Metrics, NodeType, SOLANA_RELEASE,
         validate_docker_image,
-        ClientType,
+        validator_config::ValidatorConfig,
+        ClientType, ClusterDataRoot, EnvironmentConfig, Metrics, NodeType, SOLANA_RELEASE,
     },
 };
 
@@ -191,7 +186,7 @@ fn parse_matches() -> clap::ArgMatches {
                 .long("image-name")
                 .takes_value(true)
                 .default_value("k8s-image")
-                .help("Docker image name. Will be prepended with validator_type (bootstrap or validator)"),
+                .help("Docker image name. Will be prepended with node_type (bootstrap or validator)"),
         )
         .arg(
             Arg::with_name("base_image")
@@ -292,7 +287,7 @@ fn parse_matches() -> clap::ArgMatches {
                     .long("client-type")
                     .takes_value(true)
                     .default_value("tpu-client")
-                    .possible_values(&["tpu-client", "rpc-client"])
+                    .possible_values(["tpu-client", "rpc-client"])
                     .help("Set Client Type"),
             )
             .arg(
@@ -352,6 +347,18 @@ fn parse_matches() -> clap::ArgMatches {
                     .takes_value(true)
                     .required(true)
                     .help("The path of the executable to run inside the container. e.g. /home/solana/<client-executable>"),
+            )
+            .arg(
+                Arg::with_name("delay_start")
+                    .long("delay-start")
+                    .takes_value(true)
+                    .required(true)
+                    .default_value("0")
+                    .help("Wait for `delay-start` seconds after all validators are deployed to deploy client.
+                    Use case: If client needs to connect to a specific node, but that node hasn't fully deployed yet
+                    the client may no be able to resolve the node's endpoint. `--delay-start` is used to wait so
+                    validators can deploy fully before launching the client. Currently only used for generic clients
+                    since similar functionality is built into bench-tps-client"),
             )
             .arg(
                 Arg::with_name("generic_client_args")
@@ -460,7 +467,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .parse()
                         .expect("Invalid value for client_wait_for_n_nodes")
                 }),
-            client_target_node: pubkey_of(&matches, "client_target_node"),
+            client_target_node: pubkey_of(matches, "client_target_node"),
         };
 
         ClientConfig::BenchTps(bench_tps_config)
@@ -471,6 +478,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             image: matches.value_of("docker_image").unwrap().to_string(),
             args: parse_and_format_transparent_args(matches.value_of("generic_client_args")),
             executable_path: value_t_or_exit!(matches, "executable_path", PathBuf),
+            delay_start: value_t_or_exit!(matches, "delay_start", u64),
         };
 
         ClientConfig::Generic(generic_config)
@@ -478,7 +486,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // return empty client config. will not deploy a client
         ClientConfig::Generic(GenericClientConfig::default())
     };
-
 
     let deploy_method = if let Some(local_path) = matches.value_of("local_path") {
         DeployMethod::Local(local_path.to_owned())
@@ -726,23 +733,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     for client_index in 0..client_config.num_clients() {
         let client = match client_config {
-            ClientConfig::BenchTps(_) => {
-                Node::new(DockerImage::new(
-                    registry_name.clone(),
-                    NodeType::Client(ClientType::BenchTps, client_index),
-                    image_name.clone(),
-                    image_tag.clone(),
-                ))
-            },
+            ClientConfig::BenchTps(_) => Node::new(DockerImage::new(
+                registry_name.clone(),
+                NodeType::Client(ClientType::BenchTps, client_index),
+                image_name.clone(),
+                image_tag.clone(),
+            )),
             ClientConfig::Generic(ref config) => {
-                Node::new(DockerImage::new_from_string(
-                    config.image.clone()
-                )?)
+                Node::new(DockerImage::new_from_string(config.image.clone())?)
             }
         };
         cluster_images.set_item(client);
     }
-    // if let NodeType::Client(ClientType::Generic, _) = v.node_type() {
 
     for v in cluster_images.get_all() {
         if let NodeType::Client(ClientType::Generic, _) = v.node_type() {
@@ -751,14 +753,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         docker.build_image(cluster_data_root.get_root_path(), v.image())?;
         info!("Built {} image", v.node_type());
     }
-    
+
     let images_to_push: Vec<&Node> = cluster_images
         .get_all()
-        .into_iter()
-        .filter(|v| match v.node_type() {
-            NodeType::Client(ClientType::Generic, _) => false,
-            _ => true,
-        })
+        .filter(|v| !matches!(v.node_type(), NodeType::Client(ClientType::Generic, _)))
         .collect();
     docker.push_images(images_to_push)?;
     info!("Pushed {} docker images", cluster_images.get_all().count());
@@ -994,6 +992,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    if let ClientConfig::Generic(ref generic_config) = client_config {
+        info!(
+            "Waiting {}s before deploying client",
+            generic_config.delay_start
+        );
+        std::thread::sleep(std::time::Duration::from_secs(generic_config.delay_start));
+    }
+
     for client_node in cluster_images.get_clients_mut() {
         let client_index = if let NodeType::Client(_, index) = client_node.node_type() {
             *index
@@ -1026,8 +1032,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await?;
         info!("Deployed Client Replica Set ({client_index})");
 
-        let client_service =
-            kub_controller.create_service("client-service", client_index, client_node.service_labels());
+        let client_service = kub_controller.create_service(
+            "client-service",
+            client_index,
+            client_node.service_labels(),
+        );
         kub_controller.deploy_service(&client_service).await?;
         info!("Deployed Client Service ({client_index})");
     }

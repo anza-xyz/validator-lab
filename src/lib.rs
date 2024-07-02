@@ -116,9 +116,9 @@ pub mod genesis;
 pub mod k8s_helpers;
 pub mod kubernetes;
 pub mod ledger_helper;
+pub mod node;
 pub mod release;
 pub mod startup_scripts;
-pub mod validator;
 pub mod validator_config;
 
 static BUILD: Emoji = Emoji("👷 ", "");
@@ -326,7 +326,9 @@ pub fn check_directory(path: &Path, description: &str) -> Result<(), Box<dyn std
 pub fn validate_docker_image(image: String) -> Result<(), String> {
     let parts: Vec<&str> = image.split('/').collect();
     if parts.len() != 2 || !parts[1].contains(':') {
-        return Err("Invalid Docker image format. Expected <repository>/<client-name>:<tag>".into());
+        return Err(
+            "Invalid Docker image format. Expected <repository>/<client-name>:<tag>".into(),
+        );
     }
     Ok(())
 }

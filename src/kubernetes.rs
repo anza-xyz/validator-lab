@@ -475,7 +475,7 @@ impl<'a> Kubernetes<'a> {
     }
 
     fn set_non_bootstrap_environment_variables(&self) -> Vec<EnvVar> {
-        vec![
+        let mut env_vars = vec![
             k8s_helpers::create_environment_variable(
                 "BOOTSTRAP_RPC_ADDRESS".to_string(),
                 Some("bootstrap-validator-service.$(NAMESPACE).svc.cluster.local:8899".to_string()),
@@ -491,7 +491,17 @@ impl<'a> Kubernetes<'a> {
                 Some("bootstrap-validator-service.$(NAMESPACE).svc.cluster.local:9900".to_string()),
                 None,
             ),
-        ]
+        ];
+        if let Some(shred_version) = self.validator_config.shred_version {
+            let s = k8s_helpers::create_environment_variable(
+                "SHRED_VERSION".to_string(),
+                Some(shred_version.to_string()),
+                None,
+            );
+            env_vars.push(s);
+        }
+
+        env_vars
     }
 
     fn set_load_balancer_environment_variables(&self) -> Vec<EnvVar> {
@@ -590,12 +600,7 @@ impl<'a> Kubernetes<'a> {
         command.extend(self.generate_validator_command_flags());
 
         k8s_helpers::create_replica_set(
-            format!(
-                "{}-{}-{}",
-                image.node_type(),
-                image.tag(),
-                validator_index
-            ),
+            format!("{}-{}-{}", image.node_type(), image.tag(), validator_index),
             self.namespace.clone(),
             label_selector.clone(),
             image.clone(),
@@ -730,12 +735,7 @@ impl<'a> Kubernetes<'a> {
         let command = self.client_config.build_command()?;
 
         k8s_helpers::create_replica_set(
-            format!(
-                "{}-{}-{}",
-                image.node_type(),
-                image.tag(),
-                client_index
-            ),
+            format!("{}-{}-{}", image.node_type(), image.tag(), client_index),
             self.namespace.clone(),
             label_selector.clone(),
             image.clone(),
