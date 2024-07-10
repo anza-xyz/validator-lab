@@ -107,9 +107,9 @@ impl BuildConfig {
 
             let install_script = agave_path.join("scripts/cargo-install-all.sh");
             match std::process::Command::new(install_script)
+                .arg("--validator-only")
                 .arg(self.install_directory.clone())
                 .arg(build_variant)
-                .arg("--validator-only")
                 .status()
             {
                 Ok(result) => {

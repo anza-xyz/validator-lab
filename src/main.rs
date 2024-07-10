@@ -165,7 +165,7 @@ fn parse_matches() -> clap::ArgMatches {
             Arg::with_name("base_image")
                 .long("base-image")
                 .takes_value(true)
-                .default_value("ubuntu:20.04")
+                .default_value("ubuntu:22.04")
                 .help("Docker base image"),
         )
         // Bootstrap/Validator Config
