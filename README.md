@@ -10,7 +10,7 @@ In Validator Lab we can deploy and test new validator features quickly and easil
 ## How to run
 
 ### Setup
-Ensure you have the proper permissions to conenct to the Monogon Kubernetes endpoint. Reach out to Leo on slack if you need the key (you do if you haven't asked him in the past).
+Ensure you have the proper permissions to connect to the Monogon Kubernetes endpoint. Reach out to Leo on slack if you need the key (you do if you haven't asked him in the past).
 
 From your local build host, login to Docker for pushing/pulling repos. Currently we just use the users own Docker login. This will likely change in the future.
 ```
@@ -45,6 +45,7 @@ cargo run --bin cluster --
 3) Validator, client, and rpc Dockerfiles
 
 After deploying a cluster with a bootstrap, 2 clients, 2 validators, and 3 rpc nodes all running v1.18.13, your `<cluster-data-path>` directory will look something like:
+
 ![Cluster Data Path Directory](cluster_data_path_tree.png)
 
 #### Build from Local Repo and Configure Genesis and Bootstrap and Validator Image
