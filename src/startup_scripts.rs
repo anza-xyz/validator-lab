@@ -1024,7 +1024,7 @@ bench-tps)
   # use high staked node to get higher TPS
   args+=(--client-node-id ./client-accounts/bootstrap-identity.json)
   
-  // do not append --sustained if already passed in
+  # do not append --sustained if already passed in
   if [[ ! "$benchTpsExtraArgs" =~ --sustained ]]; then
     args+=(--sustained)
   fi
