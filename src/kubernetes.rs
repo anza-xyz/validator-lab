@@ -293,6 +293,12 @@ impl<'a> Kubernetes<'a> {
         )
     }
 
+    fn generate_full_rpc_flags(flags: &mut Vec<String>) {
+        flags.push("--enable-rpc-transaction-history".to_string());
+        flags.push("--enable-extended-tx-metadata-storage".to_string());
+        flags.push("--full-rpc-api".to_string());
+    }
+
     fn generate_command_flags(&self, flags: &mut Vec<String>) {
         if self.validator_config.skip_poh_verify {
             flags.push("--skip-poh-verify".to_string());
@@ -304,9 +310,7 @@ impl<'a> Kubernetes<'a> {
             flags.push("--require-tower".to_string());
         }
         if self.validator_config.enable_full_rpc {
-            flags.push("--enable-rpc-transaction-history".to_string());
-            flags.push("--enable-extended-tx-metadata-storage".to_string());
-            flags.push("--full-rpc-api".to_string());
+            Self::generate_full_rpc_flags(flags);
         }
 
         if let Some(limit_ledger_size) = self.validator_config.max_ledger_size {
