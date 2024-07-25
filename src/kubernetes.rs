@@ -309,9 +309,6 @@ impl<'a> Kubernetes<'a> {
         if self.validator_config.require_tower {
             flags.push("--require-tower".to_string());
         }
-        if self.validator_config.enable_full_rpc {
-            Self::generate_full_rpc_flags(flags);
-        }
 
         if let Some(limit_ledger_size) = self.validator_config.max_ledger_size {
             flags.push("--limit-ledger-size".to_string());
@@ -322,6 +319,9 @@ impl<'a> Kubernetes<'a> {
     fn generate_bootstrap_command_flags(&self) -> Vec<String> {
         let mut flags: Vec<String> = Vec::new();
         self.generate_command_flags(&mut flags);
+        if self.validator_config.enable_full_rpc {
+            Self::generate_full_rpc_flags(&mut flags);
+        }
 
         flags
     }
@@ -533,6 +533,9 @@ impl<'a> Kubernetes<'a> {
     fn generate_validator_command_flags(&self) -> Vec<String> {
         let mut flags: Vec<String> = Vec::new();
         self.generate_command_flags(&mut flags);
+        if self.validator_config.enable_full_rpc {
+            Self::generate_full_rpc_flags(&mut flags);
+        }
 
         flags.push("--internal-node-stake-sol".to_string());
         flags.push(self.validator_config.internal_node_stake_sol.to_string());
@@ -608,6 +611,7 @@ impl<'a> Kubernetes<'a> {
             flags.push("--expected-shred-version".to_string());
             flags.push(shred_version.to_string());
         }
+        Self::generate_full_rpc_flags(&mut flags);
 
         self.add_known_validators_if_exists(&mut flags);
 
