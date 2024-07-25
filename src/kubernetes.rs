@@ -306,6 +306,7 @@ impl<'a> Kubernetes<'a> {
         if self.validator_config.enable_full_rpc {
             flags.push("--enable-rpc-transaction-history".to_string());
             flags.push("--enable-extended-tx-metadata-storage".to_string());
+            flags.push("--full-rpc-api".to_string());
         }
 
         if let Some(limit_ledger_size) = self.validator_config.max_ledger_size {
