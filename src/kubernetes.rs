@@ -293,6 +293,12 @@ impl<'a> Kubernetes<'a> {
         )
     }
 
+    fn generate_full_rpc_flags(flags: &mut Vec<String>) {
+        flags.push("--enable-rpc-transaction-history".to_string());
+        flags.push("--enable-extended-tx-metadata-storage".to_string());
+        flags.push("--full-rpc-api".to_string());
+    }
+
     fn generate_command_flags(&self, flags: &mut Vec<String>) {
         if self.validator_config.skip_poh_verify {
             flags.push("--skip-poh-verify".to_string());
@@ -302,10 +308,6 @@ impl<'a> Kubernetes<'a> {
         }
         if self.validator_config.require_tower {
             flags.push("--require-tower".to_string());
-        }
-        if self.validator_config.enable_full_rpc {
-            flags.push("--enable-rpc-transaction-history".to_string());
-            flags.push("--enable-extended-tx-metadata-storage".to_string());
         }
 
         if let Some(limit_ledger_size) = self.validator_config.max_ledger_size {
@@ -317,6 +319,9 @@ impl<'a> Kubernetes<'a> {
     fn generate_bootstrap_command_flags(&self) -> Vec<String> {
         let mut flags: Vec<String> = Vec::new();
         self.generate_command_flags(&mut flags);
+        if self.validator_config.enable_full_rpc {
+            Self::generate_full_rpc_flags(&mut flags);
+        }
 
         flags
     }
@@ -528,6 +533,9 @@ impl<'a> Kubernetes<'a> {
     fn generate_validator_command_flags(&self) -> Vec<String> {
         let mut flags: Vec<String> = Vec::new();
         self.generate_command_flags(&mut flags);
+        if self.validator_config.enable_full_rpc {
+            Self::generate_full_rpc_flags(&mut flags);
+        }
 
         flags.push("--internal-node-stake-sol".to_string());
         flags.push(self.validator_config.internal_node_stake_sol.to_string());
@@ -603,6 +611,7 @@ impl<'a> Kubernetes<'a> {
             flags.push("--expected-shred-version".to_string());
             flags.push(shred_version.to_string());
         }
+        Self::generate_full_rpc_flags(&mut flags);
 
         self.add_known_validators_if_exists(&mut flags);
 
