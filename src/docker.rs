@@ -125,14 +125,12 @@ impl DockerConfig {
             .arg("-c")
             .arg(&command)
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("Failed to execute command")
-            .wait_with_output()
+            .stderr(Stdio::piped())
+            .output()
             .map_err(Box::new)?;
 
         if !output.status.success() {
-            return Err(output.status.to_string().into());
+            return Err(String::from_utf8_lossy(&output.stderr).into());
         }
         progress_bar.finish_and_clear();
 
@@ -248,7 +246,7 @@ COPY --chown=solana:solana ./config-k8s/bench-tps-{index}.yml /home/solana/clien
             .arg("-c")
             .arg(&command)
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stderr(Stdio::piped())
             .spawn()?;
 
         Ok(child)
@@ -269,7 +267,7 @@ COPY --chown=solana:solana ./config-k8s/bench-tps-{index}.yml /home/solana/clien
         for child in children? {
             let output = child.wait_with_output()?;
             if !output.status.success() {
-                return Err(output.status.to_string().into());
+                return Err(String::from_utf8_lossy(&output.stderr).into());
             }
         }
         progress_bar.finish_and_clear();
