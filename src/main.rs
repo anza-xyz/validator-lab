@@ -726,7 +726,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             bootstrap_validator.service_labels(),
         );
         kub_controller.deploy_service(&bootstrap_service).await?;
-        info!("Deployed Bootstrap Balidator Service");
+        info!("Deployed Bootstrap Validator Service");
 
         // load balancer service. only create one and use for all bootstrap/rpc nodes
         // service selector matches bootstrap selector
