@@ -500,10 +500,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ),
     };
 
+    let internal_node_stake_sol = value_t_or_exit!(matches, "internal_node_stake_sol", f64);
+    let internal_node_sol =
+        value_t_or_exit!(matches, "internal_node_sol", f64) + internal_node_stake_sol;
+
     let limit_ledger_size = value_t_or_exit!(matches, "limit_ledger_size", u64);
     let mut validator_config = ValidatorConfig {
-        internal_node_sol: value_t_or_exit!(matches, "internal_node_sol", f64),
-        internal_node_stake_sol: value_t_or_exit!(matches, "internal_node_stake_sol", f64),
+        internal_node_sol,
+        internal_node_stake_sol,
         shred_version: None, // set after genesis created
         max_ledger_size: if limit_ledger_size < DEFAULT_MIN_MAX_LEDGER_SHREDS {
             clap::Error::with_description(
