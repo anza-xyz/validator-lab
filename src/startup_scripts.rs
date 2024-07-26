@@ -1022,8 +1022,6 @@ bench-tps)
   fi
 
   entrypointIp="${BOOTSTRAP_GOSSIP_ADDRESS:0:-5}"
-  url="$entrypointIp:8899"
-
   args+=(--bind-address "$entrypointIp")
   # use high staked node to get higher TPS
   args+=(--client-node-id ./client-accounts/bootstrap-identity.json)
@@ -1057,7 +1055,7 @@ bench-tps)
     solana-bench-tps \
       $benchTpsExtraArgs \
       --read-client-keys ./client-accounts.yml \
-      --url "http://$url"
+      --url "http://$LOAD_BALANCER_RPC_ADDRESS"
       ${args[*]} \
       ${runtime_args[*]} \
   "

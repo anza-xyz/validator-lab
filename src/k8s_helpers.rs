@@ -161,6 +161,11 @@ pub fn create_service(
                     name: Some("faucet-port".to_string()),
                     ..Default::default()
                 },
+                ServicePort {
+                    port: 8900, // WS Port
+                    name: Some("ws-port".to_string()),
+                    ..Default::default()
+                },
             ]),
             ..Default::default()
         }),
