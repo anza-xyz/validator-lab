@@ -296,7 +296,6 @@ impl<'a> Kubernetes<'a> {
     fn generate_full_rpc_flags(flags: &mut Vec<String>) {
         flags.push("--enable-rpc-transaction-history".to_string());
         flags.push("--enable-extended-tx-metadata-storage".to_string());
-        flags.push("--full-rpc-api".to_string());
     }
 
     fn generate_command_flags(&self, flags: &mut Vec<String>) {
