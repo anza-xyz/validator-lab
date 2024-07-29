@@ -71,6 +71,10 @@ impl<'a> Kubernetes<'a> {
         }
     }
 
+    pub fn validator_supports_full_rpc(&self) -> bool {
+        self.validator_config.enable_full_rpc
+    }
+
     pub fn set_shred_version(&mut self, shred_version: u16) {
         self.validator_config.shred_version = Some(shred_version);
     }
@@ -296,6 +300,7 @@ impl<'a> Kubernetes<'a> {
     fn generate_full_rpc_flags(flags: &mut Vec<String>) {
         flags.push("--enable-rpc-transaction-history".to_string());
         flags.push("--enable-extended-tx-metadata-storage".to_string());
+        flags.push("--full-rpc-api".to_string());
     }
 
     fn generate_command_flags(&self, flags: &mut Vec<String>) {

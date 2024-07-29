@@ -525,6 +525,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         known_validators: vec![],
     };
 
+    if num_rpc_nodes == 0 && !validator_config.enable_full_rpc {
+        return Err("Must have at least one RPC node and/or enable full RPC services `--full-rpc`. Exiting...".into());
+    }
+
     let pod_requests = PodRequests::new(
         matches.value_of("cpu_requests").unwrap().to_string(),
         matches.value_of("memory_requests").unwrap().to_string(),
@@ -689,11 +693,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             read_keypair_file(identity_path).expect("Failed to read bootstrap keypair file");
         kub_controller.add_known_validator(bootstrap_keypair.pubkey());
 
-        bootstrap_validator.add_label(
-            "load-balancer/name",
-            "load-balancer-selector",
-            LabelType::Service,
-        );
+        if kub_controller.validator_supports_full_rpc() {
+            bootstrap_validator.add_label(
+                "load-balancer/name",
+                "load-balancer-selector",
+                LabelType::Service,
+            );
+        }
         bootstrap_validator.add_label(
             "service/name",
             "bootstrap-validator-selector",

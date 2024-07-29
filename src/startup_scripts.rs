@@ -74,7 +74,7 @@ while [[ -n $1 ]]; do
     elif [[ $1 = --no-rocksdb-compaction ]]; then # not enabled in net.sh
       args+=("$1")
       shift
-    elif [[ $1 = --enable-rpc-transaction-history ]]; then # enabled through full-rpc
+    elif [[ $1 = --enable-rpc-transaction-history ]]; then
       args+=("$1")
       shift
     elif [[ $1 = --rpc-pubsub-enable-block-subscription ]]; then # not enabled in net.sh
@@ -83,7 +83,10 @@ while [[ -n $1 ]]; do
     elif [[ $1 = --enable-cpi-and-log-storage ]]; then # not enabled in net.sh
       args+=("$1")
       shift
-    elif [[ $1 = --enable-extended-tx-metadata-storage ]]; then # enabled through full-rpc
+    elif [[ $1 = --full-rpc-api ]]; then
+      args+=("$1")
+      shift
+    elif [[ $1 = --enable-extended-tx-metadata-storage ]]; then
       args+=("$1")
       shift
     elif [[ $1 = --enable-rpc-bigtable-ledger-storage ]]; then
@@ -161,9 +164,7 @@ args+=(
   --rpc-faucet-address "$MY_POD_IP":9900 \
   --no-poh-speed-test \
   --no-incremental-snapshots \
-  --full-rpc-api \
   --allow-private-addr \
-  --enable-rpc-transaction-history
 )
 
 echo "Bootstrap Args"
@@ -361,6 +362,9 @@ while [[ -n $1 ]]; do
     elif [[ $1 = --no-rocksdb-compaction ]]; then
       args+=("$1")
       shift
+    elif [[ $1 = --full-rpc-api ]]; then
+      args+=("$1")
+      shift
     elif [[ $1 = --enable-rpc-transaction-history ]]; then
       args+=("$1")
       shift
@@ -465,12 +469,10 @@ default_arg --identity "$identity"
 default_arg --vote-account "$vote_account"
 default_arg --ledger "$ledger_dir"
 default_arg --log -
-default_arg --full-rpc-api
 default_arg --no-incremental-snapshots
 default_arg --allow-private-addr
 default_arg --gossip-port 8001
 default_arg --rpc-port 8899
-default_arg --enable-rpc-transaction-history
 
 PS4="$(basename "$0"): "
 echo "PS4: $PS4"
@@ -727,6 +729,9 @@ while [[ -n $1 ]]; do
     elif [[ $1 = --ledger ]]; then
         ledger_dir=$2
         shift 2
+    elif [[ $1 = --full-rpc-api ]]; then
+        args+=("$1")
+        shift
     elif [[ $1 = --entrypoint ]]; then
         gossip_entrypoint=$2
         args+=("$1" "$2")
@@ -873,7 +878,6 @@ fi
 default_arg --identity "$identity"
 default_arg --ledger "$ledger_dir"
 default_arg --log -
-default_arg --full-rpc-api
 default_arg --no-incremental-snapshots
 default_arg --allow-private-addr
 default_arg --gossip-port 8001
@@ -1018,8 +1022,6 @@ bench-tps)
   fi
 
   entrypointIp="${BOOTSTRAP_GOSSIP_ADDRESS:0:-5}"
-  url="$entrypointIp:8899"
-
   args+=(--bind-address "$entrypointIp")
   # use high staked node to get higher TPS
   args+=(--client-node-id ./client-accounts/bootstrap-identity.json)
@@ -1053,7 +1055,7 @@ bench-tps)
     solana-bench-tps \
       $benchTpsExtraArgs \
       --read-client-keys ./client-accounts.yml \
-      --url "http://$url"
+      --url "http://$LOAD_BALANCER_RPC_ADDRESS"
       ${args[*]} \
       ${runtime_args[*]} \
   "
