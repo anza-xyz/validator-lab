@@ -252,7 +252,7 @@ fn parse_matches() -> clap::ArgMatches {
                 .value_name("PERCENTAGE")
                 .takes_value(true)
                 .default_value("100")
-                .help("The commission taken by nodes on staking rewards (0-100) [default: 100]")
+                .help("The commission taken by nodes on staking rewards (0-100)")
         )
         //RPC config
         .arg(
