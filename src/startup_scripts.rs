@@ -836,6 +836,9 @@ while [[ -n $1 ]]; do
 done
 
 echo "post positional args"
+
+solana config set -ul
+
 if [[ "$SOLANA_GPU_MISSING" -eq 1 ]]; then
     echo "Testnet requires GPUs, but none were found!  Aborting..."
     exit 1
