@@ -544,6 +544,9 @@ impl<'a> Kubernetes<'a> {
         flags.push("--internal-node-stake-sol".to_string());
         flags.push(self.validator_config.internal_node_stake_sol.to_string());
 
+        flags.push("--commission".to_string());
+        flags.push(self.validator_config.commission.to_string());
+
         flags.push("--internal-node-sol".to_string());
         flags.push(self.validator_config.internal_node_sol.to_string());
 
