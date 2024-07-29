@@ -246,6 +246,14 @@ fn parse_matches() -> clap::ArgMatches {
                 .default_value(&DEFAULT_INTERNAL_NODE_STAKE_SOL.to_string())
                 .help("Amount to stake internal nodes (Sol)."),
         )
+        .arg(
+            Arg::with_name("commission")
+                .long("commission")
+                .value_name("PERCENTAGE")
+                .takes_value(true)
+                .default_value("100")
+                .help("The commission taken by nodes on staking rewards (0-100) [default: 100]")
+        )
         //RPC config
         .arg(
             Arg::with_name("number_of_rpc_nodes")
@@ -450,6 +458,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         cluster_data_root.get_root_path(),
     );
 
+    let commission = value_t_or_exit!(matches, "commission", u8);
+
     let genesis_flags = GenesisFlags {
         hashes_per_tick: matches
             .value_of("hashes_per_tick")
@@ -498,6 +508,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .expect("Invalid value for bootstrap_validator_stake_sol")
             },
         ),
+        commission,
     };
 
     let internal_node_stake_sol = value_t_or_exit!(matches, "internal_node_stake_sol", f64);
@@ -508,6 +519,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut validator_config = ValidatorConfig {
         internal_node_sol,
         internal_node_stake_sol,
+        commission,
         shred_version: None, // set after genesis created
         max_ledger_size: if limit_ledger_size < DEFAULT_MIN_MAX_LEDGER_SHREDS {
             clap::Error::with_description(

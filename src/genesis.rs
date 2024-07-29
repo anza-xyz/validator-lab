@@ -63,6 +63,7 @@ pub struct GenesisFlags {
     pub cluster_type: String,
     pub bootstrap_validator_sol: Option<f64>,
     pub bootstrap_validator_stake_sol: Option<f64>,
+    pub commission: u8,
 }
 
 impl std::fmt::Display for GenesisFlags {
@@ -358,6 +359,8 @@ impl Genesis {
                         format!("Invalid Unicode data in path: {:?}", err),
                     )
                 })?,
+            "--vote-commission-percentage".to_string(),
+            self.flags.commission.to_string(),
         ];
 
         if self.flags.enable_warmup_epochs {

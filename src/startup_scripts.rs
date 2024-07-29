@@ -230,6 +230,7 @@ args=(
 airdrops_enabled=1
 node_sol=
 stake_sol=
+commission=
 identity=validator-accounts/identity.json
 vote_account=validator-accounts/vote.json
 no_restart=0
@@ -287,6 +288,9 @@ while [[ -n $1 ]]; do
       shift
     elif [[ $1 == --internal-node-stake-sol ]]; then
       stake_sol=$2
+      shift 2
+    elif [[ $1 == --commission ]]; then
+      commission=$2
       shift 2
     elif [[ $1 == --internal-node-sol ]]; then
       node_sol=$2
@@ -559,7 +563,7 @@ setup_validator() {
     exit 1
   fi
 
-  if ! run_solana_command "solana -u $LOAD_BALANCER_RPC_URL create-vote-account --allow-unsafe-authorized-withdrawer validator-accounts/vote.json $IDENTITY_FILE $IDENTITY_FILE -k $IDENTITY_FILE" "Create Vote Account"; then
+  if ! run_solana_command "solana -u $LOAD_BALANCER_RPC_URL create-vote-account --allow-unsafe-authorized-withdrawer validator-accounts/vote.json $IDENTITY_FILE $IDENTITY_FILE -k $IDENTITY_FILE --commission $commission" "Create Vote Account"; then
     if $vote_account_already_exists; then
       echo "Vote account already exists. Skipping remaining commands."
     else
