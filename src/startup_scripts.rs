@@ -172,6 +172,8 @@ for arg in "${args[@]}"; do
   echo "$arg"
 done
 
+solana config set -u "http://$LOAD_BALANCER_RPC_ADDRESS"
+
 pid=
 kill_node() {
   # Note: do not echo anything from this function to ensure $pid is actually
@@ -510,6 +512,8 @@ RETRY_DELAY=5
 # Load balancer RPC URL
 LOAD_BALANCER_RPC_URL="http://$LOAD_BALANCER_RPC_ADDRESS"
 
+solana config set -u $LOAD_BALANCER_RPC_URL
+
 # Identity file
 IDENTITY_FILE=$identity
 
@@ -560,12 +564,12 @@ run_solana_command() {
 }
 
 setup_validator() {
-  if ! run_solana_command "solana -u $LOAD_BALANCER_RPC_URL airdrop $node_sol $IDENTITY_FILE" "Airdrop"; then
+  if ! run_solana_command "solana airdrop $node_sol $IDENTITY_FILE" "Airdrop"; then
     echo "Aidrop command failed."
     exit 1
   fi
 
-  if ! run_solana_command "solana -u $LOAD_BALANCER_RPC_URL create-vote-account --allow-unsafe-authorized-withdrawer validator-accounts/vote.json $IDENTITY_FILE $IDENTITY_FILE -k $IDENTITY_FILE --commission $commission" "Create Vote Account"; then
+  if ! run_solana_command "solana create-vote-account --allow-unsafe-authorized-withdrawer validator-accounts/vote.json $IDENTITY_FILE $IDENTITY_FILE -k $IDENTITY_FILE --commission $commission" "Create Vote Account"; then
     if $vote_account_already_exists; then
       echo "Vote account already exists. Skipping remaining commands."
     else
@@ -579,7 +583,7 @@ setup_validator() {
 
 run_delegate_stake() {
   echo "stake sol for account: $stake_sol"
-  if ! run_solana_command "solana -u $LOAD_BALANCER_RPC_URL create-stake-account validator-accounts/stake.json $stake_sol -k $IDENTITY_FILE" "Create Stake Account"; then
+  if ! run_solana_command "solana create-stake-account validator-accounts/stake.json $stake_sol -k $IDENTITY_FILE" "Create Stake Account"; then
     if $stake_account_already_exists; then
       echo "Stake account already exists. Skipping remaining commands."
     else
@@ -591,14 +595,14 @@ run_delegate_stake() {
 
   if [ "$stake_account_already_exists" != true ]; then
     echo "stake account does not exist. so lets deligate"
-    if ! run_solana_command "solana -u $LOAD_BALANCER_RPC_URL delegate-stake validator-accounts/stake.json validator-accounts/vote.json --force -k $IDENTITY_FILE" "Delegate Stake"; then
+    if ! run_solana_command "solana delegate-stake validator-accounts/stake.json validator-accounts/vote.json --force -k $IDENTITY_FILE" "Delegate Stake"; then
       echo "Delegate stake command failed."
       exit 1
     fi
     echo "delegated stake"
   fi
 
-  solana --url $LOAD_BALANCER_RPC_URL --keypair $IDENTITY_FILE stake-account validator-accounts/stake.json
+  solana --keypair $IDENTITY_FILE stake-account validator-accounts/stake.json
 }
 
 echo "get airdrop and create vote account"

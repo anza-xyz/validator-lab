@@ -260,6 +260,8 @@ impl<'a> Kubernetes<'a> {
         if self.metrics.is_some() {
             env_vars.push(self.get_metrics_env_var_secret())
         }
+        env_vars.push(self.set_namespace_environment_variable());
+        env_vars.append(&mut self.set_load_balancer_environment_variables());
 
         let accounts_volume = Some(vec![Volume {
             name: "bootstrap-accounts-volume".into(),
@@ -473,13 +475,16 @@ impl<'a> Kubernetes<'a> {
         }
     }
 
+    fn set_namespace_environment_variable(&self) -> EnvVar {
+        k8s_helpers::create_environment_variable(
+            "NAMESPACE".to_string(),
+            None,
+            Some("metadata.namespace".to_string()),
+        )
+    }
+
     fn set_non_bootstrap_environment_variables(&self) -> Vec<EnvVar> {
         vec![
-            k8s_helpers::create_environment_variable(
-                "NAMESPACE".to_string(),
-                None,
-                Some("metadata.namespace".to_string()),
-            ),
             k8s_helpers::create_environment_variable(
                 "BOOTSTRAP_RPC_ADDRESS".to_string(),
                 Some("bootstrap-validator-service.$(NAMESPACE).svc.cluster.local:8899".to_string()),
@@ -567,10 +572,11 @@ impl<'a> Kubernetes<'a> {
         label_selector: &BTreeMap<String, String>,
         validator_index: usize,
     ) -> Result<ReplicaSet, Box<dyn Error>> {
-        let mut env_vars = self.set_non_bootstrap_environment_variables();
+        let mut env_vars = vec![self.set_namespace_environment_variable()];
         if self.metrics.is_some() {
             env_vars.push(self.get_metrics_env_var_secret())
         }
+        env_vars.append(&mut self.set_non_bootstrap_environment_variables());
         env_vars.append(&mut self.set_load_balancer_environment_variables());
 
         let accounts_volume = Some(vec![Volume {
@@ -643,6 +649,7 @@ impl<'a> Kubernetes<'a> {
             }),
             ..Default::default()
         }];
+        env_vars.push(self.set_namespace_environment_variable());
         env_vars.append(&mut self.set_non_bootstrap_environment_variables());
         env_vars.append(&mut self.set_load_balancer_environment_variables());
 
@@ -707,10 +714,11 @@ impl<'a> Kubernetes<'a> {
         label_selector: &BTreeMap<String, String>,
         client_index: usize,
     ) -> Result<ReplicaSet, Box<dyn Error>> {
-        let mut env_vars = self.set_non_bootstrap_environment_variables();
+        let mut env_vars = vec![self.set_namespace_environment_variable()];
         if self.metrics.is_some() {
             env_vars.push(self.get_metrics_env_var_secret())
         }
+        env_vars.append(&mut self.set_non_bootstrap_environment_variables());
         env_vars.append(&mut self.set_load_balancer_environment_variables());
 
         let accounts_volume = Some(vec![Volume {
