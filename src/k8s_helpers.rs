@@ -149,6 +149,7 @@ pub fn create_service(
                 ServicePort {
                     port: 8899, // RPC Port
                     name: Some("rpc-port".to_string()),
+                    node_port: if is_load_balancer { Some(30000) } else { None },
                     ..Default::default()
                 },
                 ServicePort {

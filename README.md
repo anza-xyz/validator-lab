@@ -157,6 +157,24 @@ For steps (2) and (3), when using `--no-bootstrap`, we assume that the directory
 
 Note: We can't deploy heterogeneous clusters across v1.17 and v1.18 due to feature differences. Hope to fix this in the future. Have something where we can specifically define which features to enable.
 
+## Querying the RPC from outside the cluster
+The cluster now has an external IP/port that can be queried to reach the cluster RPC. The external RPC port is 30000.
+1) Get one of the node ips. Can pick anyone: 
+```
+kubectl get nodes -o wide
+```
+2) Run your query. e.g.
+```
+curl -X POST \
+-H "Content-Type: application/json" \
+-d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "getClusterNodes"
+    }' \
+http://<node-ip>:30000
+```
+
 ## Kubernetes Cheatsheet
 Create namespace:
 ```
