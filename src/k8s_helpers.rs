@@ -1,5 +1,5 @@
 use {
-    crate::docker::DockerImage,
+    crate::{docker::DockerImage, kubernetes::ServiceType},
     k8s_openapi::{
         api::{
             apps::v1::{ReplicaSet, ReplicaSetSpec},
@@ -125,8 +125,12 @@ pub fn create_service(
     service_name: String,
     namespace: String,
     label_selector: BTreeMap<String, String>,
-    is_load_balancer: bool,
+    service_type: ServiceType,
 ) -> Service {
+    let (type_, cluster_ip, node_port) = match service_type {
+        ServiceType::Standard => (None, Some("None".to_string()), None),
+        ServiceType::LoadBalancer(port) => (Some("LoadBalancer".to_string()), None, Some(port)),
+    };
     Service {
         metadata: ObjectMeta {
             name: Some(service_name),
@@ -135,21 +139,13 @@ pub fn create_service(
         },
         spec: Some(ServiceSpec {
             selector: Some(label_selector),
-            type_: if is_load_balancer {
-                Some("LoadBalancer".to_string())
-            } else {
-                None
-            },
-            cluster_ip: if is_load_balancer {
-                None
-            } else {
-                Some("None".to_string())
-            },
+            type_,
+            cluster_ip,
             ports: Some(vec![
                 ServicePort {
                     port: 8899, // RPC Port
                     name: Some("rpc-port".to_string()),
-                    node_port: if is_load_balancer { Some(30000) } else { None },
+                    node_port,
                     ..Default::default()
                 },
                 ServicePort {

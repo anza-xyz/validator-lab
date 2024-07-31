@@ -159,7 +159,7 @@ Note: We can't deploy heterogeneous clusters across v1.17 and v1.18 due to featu
 
 ## Querying the RPC from outside the cluster
 The cluster now has an external IP/port that can be queried to reach the cluster RPC. The external RPC port is 30000.
-1) Get one of the node ips. Can pick anyone: 
+1) Get any one of the node IPs in the cluster. Querying the RPC will work with any node IP in the cluster, this includes nodes that are NOT running any of your pods:
 ```
 kubectl get nodes -o wide
 ```

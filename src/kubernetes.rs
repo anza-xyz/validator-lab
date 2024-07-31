@@ -17,12 +17,16 @@ use {
         apimachinery::pkg::api::resource::Quantity,
     },
     kube::{
-        api::{Api, ListParams, PostParams},
+        api::{Api, ListParams, ObjectList, PostParams},
         Client,
     },
     log::*,
     solana_sdk::pubkey::Pubkey,
-    std::{collections::BTreeMap, error::Error, path::Path},
+    std::{
+        collections::{BTreeMap, HashSet},
+        error::Error,
+        path::Path,
+    },
 };
 
 #[derive(Debug, Clone)]
@@ -39,6 +43,12 @@ impl PodRequests {
             ]),
         }
     }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum ServiceType {
+    Standard,
+    LoadBalancer(/* External Port */ i32),
 }
 
 pub struct Kubernetes<'a> {
@@ -79,10 +89,14 @@ impl<'a> Kubernetes<'a> {
         self.validator_config.shred_version = Some(shred_version);
     }
 
-    pub async fn namespace_exists(&self) -> Result<bool, kube::Error> {
+    async fn get_namespaces(&self) -> Result<ObjectList<Namespace>, kube::Error> {
         let namespaces: Api<Namespace> = Api::all(self.k8s_client.clone());
         let namespace_list = namespaces.list(&ListParams::default()).await?;
+        Ok(namespace_list)
+    }
 
+    pub async fn namespace_exists(&self) -> Result<bool, kube::Error> {
+        let namespace_list = self.get_namespaces().await?;
         let exists = namespace_list
             .items
             .iter()
@@ -383,7 +397,7 @@ impl<'a> Kubernetes<'a> {
             service_name.to_string(),
             self.namespace.clone(),
             label_selector.clone(),
-            false,
+            ServiceType::Standard,
         )
     }
 
@@ -397,7 +411,7 @@ impl<'a> Kubernetes<'a> {
             format!("{}-{}-{}", service_name, self.deployment_tag, index),
             self.namespace.clone(),
             label_selector.clone(),
-            false,
+            ServiceType::Standard,
         )
     }
 
@@ -411,17 +425,20 @@ impl<'a> Kubernetes<'a> {
         service_api.create(&post_params, service).await
     }
 
-    pub fn create_validator_load_balancer(
+    pub async fn create_validator_load_balancer(
         &self,
         service_name: &str,
         label_selector: &BTreeMap<String, String>,
-    ) -> Service {
-        k8s_helpers::create_service(
+    ) -> Result<Service, Box<dyn Error>> {
+        let node_port = self.get_open_external_port_for_rpc_service().await?;
+        info!("Deploying Load Balancer Service with external port: {node_port}");
+
+        Ok(k8s_helpers::create_service(
             service_name.to_string(),
             self.namespace.clone(),
             label_selector.clone(),
-            true,
-        )
+            ServiceType::LoadBalancer(node_port),
+        ))
     }
 
     pub async fn is_replica_set_ready(&self, replica_set_name: &str) -> Result<bool, kube::Error> {
@@ -757,5 +774,54 @@ impl<'a> Kubernetes<'a> {
             self.pod_requests.requests.clone(),
             None,
         )
+    }
+
+    async fn get_open_external_port_for_rpc_service(&self) -> Result<i32, Box<dyn Error>> {
+        let used_ports = self.get_all_used_ports().await?;
+
+        // This Node Port range is standard for kubernetes
+        const MIN_NODE_PORT: i32 = 30000;
+        const MAX_NODE_PORT: i32 = 32767;
+        // Find an available NodePort
+        let mut available_port = MIN_NODE_PORT;
+        while used_ports.contains(&available_port) {
+            available_port += 1;
+        }
+        if available_port > MAX_NODE_PORT {
+            return Err(format!(
+                "No available NodePort found in the range {MIN_NODE_PORT}-{MAX_NODE_PORT}"
+            )
+            .into());
+        }
+
+        Ok(available_port)
+    }
+
+    async fn get_all_used_ports(&self) -> Result<HashSet<i32>, kube::Error> {
+        let mut used_ports = HashSet::new();
+        let namespaces = self.get_namespaces().await?;
+        let namespaces: Vec<String> = namespaces
+            .items
+            .into_iter()
+            .filter_map(|ns| ns.metadata.name)
+            .collect();
+
+        // Iterate over namespaces to collect used NodePorts
+        for ns in namespaces {
+            let services: Api<Service> = Api::namespaced(self.k8s_client.clone(), &ns);
+            let service_list = services.list(&Default::default()).await?;
+            for svc in service_list {
+                if let Some(spec) = svc.spec {
+                    if let Some(ports) = spec.ports {
+                        for port in ports {
+                            if let Some(node_port) = port.node_port {
+                                used_ports.insert(node_port);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(used_ports)
     }
 }
