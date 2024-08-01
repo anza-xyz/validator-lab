@@ -755,10 +755,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let load_balancer_label =
             kub_controller.create_selector("load-balancer/name", "load-balancer-selector");
         //create load balancer
-        let load_balancer = kub_controller.create_validator_load_balancer(
-            "bootstrap-and-rpc-node-lb-service",
-            &load_balancer_label,
-        );
+        let load_balancer = kub_controller
+            .create_validator_load_balancer(
+                "bootstrap-and-rpc-node-lb-service",
+                &load_balancer_label,
+            )
+            .await?;
 
         //deploy load balancer
         kub_controller.deploy_service(&load_balancer).await?;
