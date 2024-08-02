@@ -329,6 +329,9 @@ impl<'a> Kubernetes<'a> {
         if self.validator_config.require_tower {
             flags.push("--require-tower".to_string());
         }
+        if !self.validator_config.restart {
+            flags.push("--no-restart".to_string());
+        }
 
         if let Some(limit_ledger_size) = self.validator_config.max_ledger_size {
             flags.push("--limit-ledger-size".to_string());

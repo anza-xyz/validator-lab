@@ -254,6 +254,12 @@ fn parse_matches() -> clap::ArgMatches {
                 .default_value("100")
                 .help("The commission taken by nodes on staking rewards (0-100)")
         )
+        .arg(
+            Arg::with_name("no_restart")
+                .long("no-restart")
+                .help("Validator config. If set, validators will not restart after \
+                       exiting for any reason."),
+        )
         //RPC config
         .arg(
             Arg::with_name("number_of_rpc_nodes")
@@ -535,6 +541,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         require_tower: matches.is_present("require_tower"),
         enable_full_rpc: matches.is_present("enable_full_rpc"),
         known_validators: vec![],
+        restart: !matches.is_present("no_restart"),
     };
 
     if num_rpc_nodes == 0 && !validator_config.enable_full_rpc {

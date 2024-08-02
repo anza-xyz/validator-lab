@@ -12,4 +12,5 @@ pub struct ValidatorConfig {
     pub require_tower: bool,
     pub enable_full_rpc: bool,
     pub known_validators: Vec<Pubkey>,
+    pub restart: bool,
 }
