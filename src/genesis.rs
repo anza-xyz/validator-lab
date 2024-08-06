@@ -1,5 +1,5 @@
 use {
-    crate::{fetch_spl, new_spinner_progress_bar, ValidatorType, SOLANA_RELEASE, SUN, WRITING},
+    crate::{fetch_spl, new_spinner_progress_bar, NodeType, SOLANA_RELEASE, SUN, WRITING},
     log::*,
     rand::Rng,
     solana_core::gen_keys::GenKeys,
@@ -155,20 +155,20 @@ impl Genesis {
 
     pub fn generate_accounts(
         &mut self,
-        validator_type: ValidatorType,
+        node_type: NodeType,
         number_of_accounts: usize,
         deployment_tag: Option<&str>,
     ) -> Result<(), Box<dyn Error>> {
-        info!("generating {number_of_accounts} {validator_type} accounts...");
+        info!("generating {number_of_accounts} {node_type} accounts...");
 
-        let account_types = match validator_type {
-            ValidatorType::Bootstrap | ValidatorType::Standard => {
+        let account_types = match node_type {
+            NodeType::Bootstrap | NodeType::Standard => {
                 vec!["identity", "stake-account", "vote-account"]
             }
-            ValidatorType::RPC => {
+            NodeType::RPC => {
                 vec!["identity"] // no vote or stake account for RPC
             }
-            ValidatorType::Client(_) => {
+            NodeType::Client(_, _) => {
                 return Err("Client valdiator_type in generate_accounts not allowed".into())
             }
         };
@@ -190,28 +190,28 @@ impl Genesis {
             .key_generator
             .gen_n_keypairs(total_accounts_to_generate as u64);
 
-        self.write_accounts_to_file(&validator_type, &account_types, &keypairs)?;
+        self.write_accounts_to_file(&node_type, &account_types, &keypairs)?;
 
         Ok(())
     }
 
     fn write_accounts_to_file(
         &self,
-        validator_type: &ValidatorType,
+        node_type: &NodeType,
         account_types: &[String],
         keypairs: &[Keypair],
     ) -> Result<(), Box<dyn Error>> {
         for (i, keypair) in keypairs.iter().enumerate() {
             let account_index = i / account_types.len();
             let account = &account_types[i % account_types.len()];
-            let filename = match validator_type {
-                ValidatorType::Bootstrap => {
-                    format!("{validator_type}/{account}.json")
+            let filename = match node_type {
+                NodeType::Bootstrap => {
+                    format!("{node_type}/{account}.json")
                 }
-                ValidatorType::Standard | ValidatorType::RPC => {
-                    format!("{validator_type}-{account}-{account_index}.json")
+                NodeType::Standard | NodeType::RPC => {
+                    format!("{node_type}-{account}-{account_index}.json")
                 }
-                ValidatorType::Client(_) => panic!("Client type not supported"),
+                NodeType::Client(_, _) => panic!("Client type not supported"),
             };
 
             let outfile = self.config_dir.join(&filename);
@@ -253,7 +253,7 @@ impl Genesis {
         for child in children? {
             let output = child.wait_with_output()?;
             if !output.status.success() {
-                return Err(output.status.to_string().into());
+                return Err(String::from_utf8_lossy(&output.stderr).into());
             }
         }
 
@@ -301,7 +301,7 @@ impl Genesis {
         let child = Command::new(executable_path)
             .args(args)
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stderr(Stdio::piped())
             .spawn()?;
 
         Ok(child)

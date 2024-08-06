@@ -1,5 +1,5 @@
 use {
-    clap::{command, value_t_or_exit, Arg, ArgGroup},
+    clap::{command, value_t_or_exit, Arg, ArgGroup, SubCommand},
     log::*,
     solana_clap_v3_utils::input_parsers::pubkey_of,
     solana_ledger::blockstore_cleanup_service::{
@@ -10,7 +10,7 @@ use {
     strum::VariantNames,
     validator_lab::{
         check_directory,
-        client_config::ClientConfig,
+        client_config::{BenchTpsConfig, ClientConfig, GenericClientConfig},
         cluster_images::ClusterImages,
         docker::{DockerConfig, DockerImage},
         genesis::{
@@ -21,11 +21,12 @@ use {
         },
         kubernetes::{Kubernetes, PodRequests},
         ledger_helper::LedgerHelper,
-        parse_and_format_bench_tps_args,
+        node::{LabelType, Node},
+        parse_and_format_transparent_args,
         release::{BuildConfig, BuildType, DeployMethod},
-        validator::{LabelType, Validator},
+        validate_docker_image,
         validator_config::ValidatorConfig,
-        ClusterDataRoot, EnvironmentConfig, Metrics, ValidatorType, SOLANA_RELEASE,
+        ClientType, ClusterDataRoot, EnvironmentConfig, Metrics, NodeType, SOLANA_RELEASE,
     },
 };
 
@@ -185,7 +186,7 @@ fn parse_matches() -> clap::ArgMatches {
                 .long("image-name")
                 .takes_value(true)
                 .default_value("k8s-image")
-                .help("Docker image name. Will be prepended with validator_type (bootstrap or validator)"),
+                .help("Docker image name. Will be prepended with node_type (bootstrap or validator)"),
         )
         .arg(
             Arg::with_name("base_image")
@@ -269,68 +270,131 @@ fn parse_matches() -> clap::ArgMatches {
                 .help("Number of rpc nodes")
         )
         // Client Config
-        .arg(
-            Arg::with_name("number_of_clients")
-                .long("num-clients")
-                .short('c')
-                .takes_value(true)
-                .default_value("0")
-                .help("Number of clients")
+        .subcommand(SubCommand::with_name("bench-tps")
+            .about("Run the bench-tps client")
+            .arg(
+                Arg::with_name("number_of_clients")
+                    .long("num-clients")
+                    .short('c')
+                    .takes_value(true)
+                    .default_value("1")
+                    .help("Number of clients"),
+            )
+            .arg(
+                Arg::with_name("client_duration_seconds")
+                    .long("client-duration-seconds")
+                    .takes_value(true)
+                    .default_value("7500")
+                    .value_name("SECS")
+                    .help("Seconds to run benchmark, then exit"),
+            )
+            .arg(
+                Arg::with_name("client_type")
+                    .long("client-type")
+                    .takes_value(true)
+                    .default_value("tpu-client")
+                    .possible_values(["tpu-client", "rpc-client"])
+                    .help("Set Client Type"),
+            )
+            .arg(
+                Arg::with_name("client_to_run")
+                    .long("client-to-run")
+                    .takes_value(true)
+                    .default_value("bench-tps")
+                    .possible_values(["bench-tps", "idle"])
+                    .help("Client Config. Set Client to run"),
+            )
+            .arg(
+                Arg::with_name("bench_tps_args")
+                    .long("bench-tps-args")
+                    .value_name("KEY VALUE")
+                    .takes_value(true)
+                    .multiple(true)
+                    .number_of_values(1)
+                    .help("Client Config.
+                    User can optionally provide extraArgs that are transparently
+                    supplied to the client program as command line parameters.
+                    For example,
+                        --bench-tps-args 'tx-count=5000 thread-batch-sleep-ms=250'
+                    This will start bench-tps clients, and supply '--tx-count 5000 --thread-batch-sleep-ms 250'
+                    to the bench-tps client."),
+            )
+            .arg(
+                Arg::with_name("client_wait_for_n_nodes")
+                    .long("client-wait-for-n-nodes")
+                    .short('N')
+                    .takes_value(true)
+                    .value_name("NUM")
+                    .help("Optional: Wait for NUM nodes to converge"),
+            )
+            .arg(
+                Arg::with_name("client_target_node")
+                    .long("client-target-node")
+                    .takes_value(true)
+                    .value_name("PUBKEY")
+                    .help("Client Config. Optional: Specify an exact node to send transactions to
+                    Not supported yet. TODO..."),
+            )
         )
-        .arg(
-            Arg::with_name("client_type")
-                .long("client-type")
-                .takes_value(true)
-                .default_value("tpu-client")
-                .possible_values(["tpu-client", "rpc-client"])
-                .help("Client Config. Set Client Type"),
-        )
-        .arg(
-            Arg::with_name("client_to_run")
-                .long("client-to-run")
-                .takes_value(true)
-                .default_value("bench-tps")
-                .possible_values(["bench-tps", "idle"])
-                .help("Client Config. Set Client to run"),
-        )
-        .arg(
-            Arg::with_name("bench_tps_args")
-                .long("bench-tps-args")
-                .value_name("KEY VALUE")
-                .takes_value(true)
-                .multiple(true)
-                .number_of_values(1)
-                .help("Client Config.
-                User can optionally provide extraArgs that are transparently
-                supplied to the client program as command line parameters.
-                For example,
-                    --bench-tps-args 'tx-count=5000 thread-batch-sleep-ms=250'
-                This will start bench-tps clients, and supply '--tx-count 5000 --thread-batch-sleep-ms 250'
-                to the bench-tps client."),
-        )
-        .arg(
-            Arg::with_name("client_target_node")
-                .long("client-target-node")
-                .takes_value(true)
-                .value_name("PUBKEY")
-                .help("Client Config. Optional: Specify an exact node to send transactions to
-                Not supported yet. TODO..."),
-        )
-        .arg(
-            Arg::with_name("client_duration_seconds")
-                .long("client-duration-seconds")
-                .takes_value(true)
-                .default_value("7500")
-                .value_name("SECS")
-                .help("Client Config. Seconds to run benchmark, then exit"),
-        )
-        .arg(
-            Arg::with_name("client_wait_for_n_nodes")
-                .long("client-wait-for-n-nodes")
-                .short('N')
-                .takes_value(true)
-                .value_name("NUM")
-                .help("Client Config. Optional: Wait for NUM nodes to converge"),
+        .subcommand(SubCommand::with_name("generic-client")
+            .about("Run a generic client")
+            .arg(
+                Arg::with_name("number_of_clients")
+                    .long("num-clients")
+                    .short('c')
+                    .takes_value(true)
+                    .default_value("1")
+                    .help("Number of clients"),
+            )
+            .arg(
+                Arg::with_name("client_duration_seconds")
+                    .long("client-duration-seconds")
+                    .takes_value(true)
+                    .default_value("7500")
+                    .value_name("SECS")
+                    .help("Seconds to run benchmark, then exit"),
+            )
+            .arg(
+                Arg::with_name("docker_image")
+                    .long("docker-image")
+                    .takes_value(true)
+                    .value_name("<repository>/<client-name>:<tag>")
+                    .validator(validate_docker_image)
+                    .required(true)
+                    .help("Name of docker image to pull and run"),
+            )
+            .arg(
+                Arg::with_name("executable_path")
+                    .long("executable-path")
+                    .takes_value(true)
+                    .required(true)
+                    .help("The path of the executable to run inside the container. e.g. /home/solana/<client-executable>"),
+            )
+            .arg(
+                Arg::with_name("delay_start")
+                    .long("delay-start")
+                    .takes_value(true)
+                    .required(true)
+                    .default_value("0")
+                    .help("Wait for `delay-start` seconds after all validators are deployed to deploy client.
+                    Use case: If client needs to connect to a specific node, but that node hasn't fully deployed yet
+                    the client may not be able to resolve the node's endpoint. `--delay-start` is used to wait so
+                    validators can deploy fully before launching the client. Currently only used for generic clients
+                    since similar functionality is built into bench-tps-client"),
+            )
+            .arg(
+                Arg::with_name("generic_client_args")
+                    .long("generic-client-args")
+                    .takes_value(true)
+                    .value_name("KEY VALUE")
+                    .number_of_values(1)
+                    .help("User can provide args that are transparently
+                    supplied to the client program as command line parameters.
+                    For example,
+                        --generic-client-args 'thread-sleep-ms=0 spam-type=mixed'
+                    This will start the generic clients, and supply '--thread-sleep-ms 0 --spam-type mixed'
+                    to the generic client executable."),
+            )
         )
         // Heterogeneous Cluster Config
         .arg(
@@ -409,20 +473,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let num_validators = value_t_or_exit!(matches, "number_of_validators", usize);
     let num_rpc_nodes = value_t_or_exit!(matches, "number_of_rpc_nodes", usize);
-    let client_config = ClientConfig {
-        num_clients: value_t_or_exit!(matches, "number_of_clients", usize),
-        client_type: matches.value_of("client_type").unwrap().to_string(),
-        client_to_run: matches.value_of("client_to_run").unwrap().to_string(),
-        bench_tps_args: parse_and_format_bench_tps_args(matches.value_of("bench_tps_args")),
-        client_target_node: pubkey_of(&matches, "client_target_node"),
-        client_duration_seconds: value_t_or_exit!(matches, "client_duration_seconds", u64),
-        client_wait_for_n_nodes: matches
-            .value_of("client_wait_for_n_nodes")
-            .map(|value_str| {
-                value_str
-                    .parse()
-                    .expect("Invalid value for client_wait_for_n_nodes")
-            }),
+    let client_config = if let Some(matches) = matches.subcommand_matches("bench-tps") {
+        let bench_tps_config = BenchTpsConfig {
+            num_clients: value_t_or_exit!(matches, "number_of_clients", usize),
+            client_duration_seconds: value_t_or_exit!(matches, "client_duration_seconds", u64),
+            client_type: matches.value_of("client_type").unwrap().to_string(),
+            client_to_run: matches.value_of("client_to_run").unwrap().to_string(),
+            bench_tps_args: parse_and_format_transparent_args(matches.value_of("bench_tps_args")),
+            client_wait_for_n_nodes: matches
+                .value_of("client_wait_for_n_nodes")
+                .map(|value_str| {
+                    value_str
+                        .parse()
+                        .expect("Invalid value for client_wait_for_n_nodes")
+                }),
+            client_target_node: pubkey_of(matches, "client_target_node"),
+        };
+
+        ClientConfig::BenchTps(bench_tps_config)
+    } else if let Some(matches) = matches.subcommand_matches("generic-client") {
+        let generic_config = GenericClientConfig {
+            num_clients: value_t_or_exit!(matches, "number_of_clients", usize),
+            client_duration_seconds: value_t_or_exit!(matches, "client_duration_seconds", u64),
+            image: matches.value_of("docker_image").unwrap().to_string(),
+            args: parse_and_format_transparent_args(matches.value_of("generic_client_args")),
+            executable_path: value_t_or_exit!(matches, "executable_path", PathBuf),
+            delay_start: value_t_or_exit!(matches, "delay_start", u64),
+        };
+
+        ClientConfig::Generic(generic_config)
+    } else {
+        ClientConfig::None
     };
 
     let deploy_method = if let Some(local_path) = matches.value_of("local_path") {
@@ -598,7 +679,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         genesis.generate_faucet()?;
         info!("Generated faucet account");
 
-        genesis.generate_accounts(ValidatorType::Bootstrap, 1, None)?;
+        genesis.generate_accounts(NodeType::Bootstrap, 1, None)?;
         info!("Generated bootstrap account");
 
         // creates genesis and writes to binary file
@@ -609,10 +690,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // generate standard validator accounts
-    genesis.generate_accounts(ValidatorType::Standard, num_validators, Some(&image_tag))?;
+    genesis.generate_accounts(NodeType::Standard, num_validators, Some(&image_tag))?;
     info!("Generated {num_validators} validator account(s)");
 
-    genesis.generate_accounts(ValidatorType::RPC, num_rpc_nodes, Some(&image_tag))?;
+    genesis.generate_accounts(NodeType::RPC, num_rpc_nodes, Some(&image_tag))?;
     info!("Generated {num_rpc_nodes} rpc account(s)");
 
     let ledger_dir = config_directory.join("bootstrap-validator");
@@ -628,62 +709,77 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut cluster_images = ClusterImages::default();
     if deploy_bootstrap_validator {
-        let bootstrap_validator = Validator::new(DockerImage::new(
+        let bootstrap_validator = Node::new(DockerImage::new(
             registry_name.clone(),
-            ValidatorType::Bootstrap,
+            NodeType::Bootstrap,
             image_name.clone(),
             image_tag.clone(),
         ));
-        cluster_images.set_item(bootstrap_validator, ValidatorType::Bootstrap);
+        cluster_images.set_item(bootstrap_validator);
     }
 
     if num_validators > 0 {
-        let validator = Validator::new(DockerImage::new(
+        let validator = Node::new(DockerImage::new(
             registry_name.clone(),
-            ValidatorType::Standard,
+            NodeType::Standard,
             image_name.clone(),
             image_tag.clone(),
         ));
-        cluster_images.set_item(validator, ValidatorType::Standard);
+        cluster_images.set_item(validator);
     }
 
     if num_rpc_nodes > 0 {
-        let rpc_node = Validator::new(DockerImage::new(
+        let rpc_node = Node::new(DockerImage::new(
             registry_name.clone(),
-            ValidatorType::RPC,
+            NodeType::RPC,
             image_name.clone(),
             image_tag.clone(),
         ));
-        cluster_images.set_item(rpc_node, ValidatorType::RPC);
+        cluster_images.set_item(rpc_node);
     }
 
-    if client_config.num_clients > 0 {
-        genesis.create_client_accounts(
-            client_config.num_clients,
-            &client_config.bench_tps_args,
-            DEFAULT_CLIENT_LAMPORTS_PER_SIGNATURE,
-            &config_directory,
-            cluster_data_root.get_root_path(),
-        )?;
-        info!("Client accounts created");
+    if let ClientConfig::BenchTps(ref bench_tps_config) = client_config {
+        if bench_tps_config.num_clients > 0 {
+            genesis.create_client_accounts(
+                bench_tps_config.num_clients,
+                &bench_tps_config.bench_tps_args,
+                DEFAULT_CLIENT_LAMPORTS_PER_SIGNATURE,
+                &config_directory,
+                cluster_data_root.get_root_path(),
+            )?;
+            info!("Client accounts created");
+        }
     }
 
-    for client_index in 0..client_config.num_clients {
-        let client = Validator::new(DockerImage::new(
-            registry_name.clone(),
-            ValidatorType::Client(client_index),
-            image_name.clone(),
-            image_tag.clone(),
-        ));
-        cluster_images.set_item(client, ValidatorType::Client(client_index));
+    for client_index in 0..client_config.num_clients() {
+        let client = match client_config {
+            ClientConfig::BenchTps(_) => Node::new(DockerImage::new(
+                registry_name.clone(),
+                NodeType::Client(ClientType::BenchTps, client_index),
+                image_name.clone(),
+                image_tag.clone(),
+            )),
+            ClientConfig::Generic(ref config) => {
+                Node::new(DockerImage::new_from_string(config.image.clone())?)
+            }
+            ClientConfig::None => unreachable!(),
+        };
+        cluster_images.set_item(client);
     }
 
     for v in cluster_images.get_all() {
+        if let NodeType::Client(ClientType::Generic, _) = v.node_type() {
+            continue;
+        }
         docker.build_image(cluster_data_root.get_root_path(), v.image())?;
-        info!("Built {} image", v.validator_type());
+        info!("Built {} image", v.node_type());
     }
 
-    docker.push_images(cluster_images.get_all())?;
+    let images_to_push: Vec<&Node> = cluster_images
+        .get_all()
+        .filter(|v| !matches!(v.node_type(), NodeType::Client(ClientType::Generic, _)))
+        .collect();
+    docker.push_images(images_to_push)?;
     info!("Pushed {} docker images", cluster_images.get_all().count());
 
     // metrics secret create once and use by all pods
@@ -726,7 +822,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
         bootstrap_validator.add_label(
             "validator/type",
-            bootstrap_validator.validator_type().to_string(),
+            bootstrap_validator.node_type().to_string(),
             LabelType::Info,
         );
         bootstrap_validator.add_label(
@@ -809,7 +905,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             rpc_node.add_label(
                 "rpc-node/type",
-                rpc_node.validator_type().to_string(),
+                rpc_node.node_type().to_string(),
                 LabelType::Info,
             );
 
@@ -885,7 +981,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
             validator.add_label(
                 "validator/type",
-                validator.validator_type().to_string(),
+                validator.node_type().to_string(),
                 LabelType::Info,
             );
             validator.add_label(
@@ -917,40 +1013,51 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    for client in cluster_images.get_clients_mut() {
-        let client_index = if let ValidatorType::Client(index) = client.validator_type() {
+    if let ClientConfig::Generic(ref generic_config) = client_config {
+        info!(
+            "Waiting {}s before deploying client",
+            generic_config.delay_start
+        );
+        std::thread::sleep(std::time::Duration::from_secs(generic_config.delay_start));
+    }
+
+    for client_node in cluster_images.get_clients_mut() {
+        let client_index = if let NodeType::Client(_, index) = client_node.node_type() {
             *index
         } else {
             return Err("Invalid Validator Type in Client".into());
         };
 
         let client_secret = kub_controller.create_client_secret(client_index, &config_directory)?;
-        client.set_secret(client_secret);
+        client_node.set_secret(client_secret);
 
-        kub_controller.deploy_secret(client.secret()).await?;
+        kub_controller.deploy_secret(client_node.secret()).await?;
         info!("Deployed Client {client_index} Secret");
 
-        client.add_label(
+        client_node.add_label(
             "client/name",
             format!("client-{client_index}"),
             LabelType::Service,
         );
 
         let client_replica_set = kub_controller.create_client_replica_set(
-            client.image(),
-            client.secret().metadata.name.clone(),
-            &client.all_labels(),
+            client_node.image(),
+            client_node.secret().metadata.name.clone(),
+            &client_node.all_labels(),
             client_index,
         )?;
-        client.set_replica_set(client_replica_set);
+        client_node.set_replica_set(client_replica_set);
 
         kub_controller
-            .deploy_replicas_set(client.replica_set())
+            .deploy_replicas_set(client_node.replica_set())
             .await?;
         info!("Deployed Client Replica Set ({client_index})");
 
-        let client_service =
-            kub_controller.create_service("client-service", client_index, client.service_labels());
+        let client_service = kub_controller.create_service(
+            "client-service",
+            client_index,
+            client_node.service_labels(),
+        );
         kub_controller.deploy_service(&client_service).await?;
         info!("Deployed Client Service ({client_index})");
     }

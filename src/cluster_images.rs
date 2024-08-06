@@ -1,5 +1,5 @@
 use {
-    crate::{validator::Validator, ValidatorType},
+    crate::{node::Node, NodeType},
     std::{error::Error, result::Result},
 };
 
@@ -11,41 +11,41 @@ use {
 
 #[derive(Default)]
 pub struct ClusterImages {
-    bootstrap: Option<Validator>,
-    validator: Option<Validator>,
-    rpc: Option<Validator>,
-    clients: Vec<Validator>,
+    bootstrap: Option<Node>,
+    validator: Option<Node>,
+    rpc: Option<Node>,
+    clients: Vec<Node>,
 }
 
 impl ClusterImages {
-    pub fn set_item(&mut self, item: Validator, validator_type: ValidatorType) {
-        match validator_type {
-            ValidatorType::Bootstrap => self.bootstrap = Some(item),
-            ValidatorType::Standard => self.validator = Some(item),
-            ValidatorType::RPC => self.rpc = Some(item),
-            ValidatorType::Client(_) => self.clients.push(item),
+    pub fn set_item(&mut self, item: Node) {
+        match item.node_type() {
+            NodeType::Bootstrap => self.bootstrap = Some(item),
+            NodeType::Standard => self.validator = Some(item),
+            NodeType::RPC => self.rpc = Some(item),
+            NodeType::Client(_, _) => self.clients.push(item),
         }
     }
 
-    pub fn bootstrap(&mut self) -> Result<&mut Validator, Box<dyn Error>> {
+    pub fn bootstrap(&mut self) -> Result<&mut Node, Box<dyn Error>> {
         self.bootstrap
             .as_mut()
             .ok_or_else(|| "Bootstrap validator is not available".into())
     }
 
-    pub fn validator(&mut self) -> Result<&mut Validator, Box<dyn Error>> {
+    pub fn validator(&mut self) -> Result<&mut Node, Box<dyn Error>> {
         self.validator
             .as_mut()
             .ok_or_else(|| "Validator is not available".into())
     }
 
-    pub fn rpc(&mut self) -> Result<&mut Validator, Box<dyn Error>> {
+    pub fn rpc(&mut self) -> Result<&mut Node, Box<dyn Error>> {
         self.rpc
             .as_mut()
             .ok_or_else(|| "Validator is not available".into())
     }
 
-    pub fn client(&mut self, client_index: usize) -> Result<&mut Validator, Box<dyn Error>> {
+    pub fn client(&mut self, client_index: usize) -> Result<&mut Node, Box<dyn Error>> {
         if self.clients.is_empty() {
             return Err("No Clients available".to_string().into());
         }
@@ -54,7 +54,7 @@ impl ClusterImages {
             .ok_or_else(|| "Client index out of bounds".to_string().into())
     }
 
-    pub fn get_validators(&self) -> impl Iterator<Item = &Validator> {
+    pub fn get_validators(&self) -> impl Iterator<Item = &Node> {
         self.bootstrap
             .iter()
             .chain(self.validator.iter())
@@ -62,15 +62,15 @@ impl ClusterImages {
             .filter_map(Some)
     }
 
-    pub fn get_clients(&self) -> impl Iterator<Item = &Validator> {
+    pub fn get_clients(&self) -> impl Iterator<Item = &Node> {
         self.clients.iter()
     }
 
-    pub fn get_clients_mut(&mut self) -> impl Iterator<Item = &mut Validator> {
+    pub fn get_clients_mut(&mut self) -> impl Iterator<Item = &mut Node> {
         self.clients.iter_mut()
     }
 
-    pub fn get_all(&self) -> impl Iterator<Item = &Validator> {
+    pub fn get_all(&self) -> impl Iterator<Item = &Node> {
         self.get_validators().chain(self.get_clients())
     }
 }

@@ -77,7 +77,7 @@ pub fn create_replica_set(
         }),
         spec: Some(PodSpec {
             containers: vec![Container {
-                name: format!("{}-container", image_name.validator_type()),
+                name: format!("{}-container", image_name.node_type()),
                 image: Some(image_name.to_string()),
                 image_pull_policy: Some("Always".to_string()),
                 env: Some(environment_variables),

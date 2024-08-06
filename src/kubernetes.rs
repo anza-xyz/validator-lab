@@ -4,7 +4,7 @@ use {
         docker::DockerImage,
         k8s_helpers::{self, SecretType},
         validator_config::ValidatorConfig,
-        Metrics, ValidatorType,
+        Metrics, NodeType,
     },
     k8s_openapi::{
         api::{
@@ -294,13 +294,13 @@ impl<'a> Kubernetes<'a> {
 
         let command_path = format!(
             "/home/solana/k8s-cluster-scripts/{}-startup-script.sh",
-            ValidatorType::Bootstrap
+            NodeType::Bootstrap
         );
         let mut command = vec![command_path];
         command.extend(self.generate_bootstrap_command_flags());
 
         k8s_helpers::create_replica_set(
-            format!("{}-{}", image.validator_type(), image.tag()),
+            format!("{}-{}", image.node_type(), image.tag()),
             self.namespace.clone(),
             label_selector.clone(),
             image.clone(),
@@ -344,32 +344,6 @@ impl<'a> Kubernetes<'a> {
         self.generate_command_flags(&mut flags);
         if self.validator_config.enable_full_rpc {
             Self::generate_full_rpc_flags(&mut flags);
-        }
-
-        flags
-    }
-
-    fn generate_client_command_flags(&self) -> Vec<String> {
-        let mut flags = vec![];
-
-        flags.push(self.client_config.client_to_run.clone()); //client to run
-        if !self.client_config.bench_tps_args.is_empty() {
-            flags.push(self.client_config.bench_tps_args.join(" "));
-        }
-
-        flags.push(self.client_config.client_type.clone());
-
-        if let Some(target_node) = self.client_config.client_target_node {
-            flags.push("--target-node".to_string());
-            flags.push(target_node.to_string());
-        }
-
-        flags.push("--duration".to_string());
-        flags.push(self.client_config.client_duration_seconds.to_string());
-
-        if let Some(num_nodes) = self.client_config.client_wait_for_n_nodes {
-            flags.push("--num-nodes".to_string());
-            flags.push(num_nodes.to_string());
         }
 
         flags
@@ -504,7 +478,7 @@ impl<'a> Kubernetes<'a> {
     }
 
     fn set_non_bootstrap_environment_variables(&self) -> Vec<EnvVar> {
-        vec![
+        let mut env_vars = vec![
             k8s_helpers::create_environment_variable(
                 "BOOTSTRAP_RPC_ADDRESS".to_string(),
                 Some("bootstrap-validator-service.$(NAMESPACE).svc.cluster.local:8899".to_string()),
@@ -520,7 +494,17 @@ impl<'a> Kubernetes<'a> {
                 Some("bootstrap-validator-service.$(NAMESPACE).svc.cluster.local:9900".to_string()),
                 None,
             ),
-        ]
+        ];
+        if let Some(shred_version) = self.validator_config.shred_version {
+            let s = k8s_helpers::create_environment_variable(
+                "SHRED_VERSION".to_string(),
+                Some(shred_version.to_string()),
+                None,
+            );
+            env_vars.push(s);
+        }
+
+        env_vars
     }
 
     fn set_load_balancer_environment_variables(&self) -> Vec<EnvVar> {
@@ -619,12 +603,7 @@ impl<'a> Kubernetes<'a> {
         command.extend(self.generate_validator_command_flags());
 
         k8s_helpers::create_replica_set(
-            format!(
-                "{}-{}-{}",
-                image.validator_type(),
-                image.tag(),
-                validator_index
-            ),
+            format!("{}-{}-{}", image.node_type(), image.tag(), validator_index),
             self.namespace.clone(),
             label_selector.clone(),
             image.clone(),
@@ -714,7 +693,7 @@ impl<'a> Kubernetes<'a> {
         };
 
         k8s_helpers::create_replica_set(
-            format!("{}-{}-{}", image.validator_type(), image.tag(), rpc_index),
+            format!("{}-{}-{}", image.node_type(), image.tag(), rpc_index),
             self.namespace.clone(),
             label_selector.clone(),
             image.clone(),
@@ -756,22 +735,15 @@ impl<'a> Kubernetes<'a> {
             ..Default::default()
         }]);
 
-        let mut command =
-            vec!["/home/solana/k8s-cluster-scripts/client-startup-script.sh".to_string()];
-        command.extend(self.generate_client_command_flags());
+        let command = self.client_config.build_command()?;
 
         k8s_helpers::create_replica_set(
-            format!(
-                "{}-{}-{}",
-                image.validator_type(),
-                image.tag(),
-                client_index
-            ),
+            format!("{}-{}-{}", image.node_type(), image.tag(), client_index),
             self.namespace.clone(),
             label_selector.clone(),
             image.clone(),
             env_vars,
-            command.clone(),
+            command,
             accounts_volume,
             accounts_volume_mount,
             self.pod_requests.requests.clone(),

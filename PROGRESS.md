@@ -82,6 +82,7 @@ By here:
 - [ ] Other Features
     - [x] Heterogeneous Clusters (i.e. multiple validator versions)
     - [x] Deploy specific commit
+    - [x] Generic Clients
     - [ ] Deploy with user-defined stake distribution
 
 By here:
