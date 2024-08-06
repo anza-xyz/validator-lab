@@ -264,24 +264,24 @@ fn parse_matches() -> clap::ArgMatches {
                 .help("Number of rpc nodes")
         )
         // Client Config
-        .arg(
-            Arg::with_name("number_of_clients")
-                .long("num-clients")
-                .short('c')
-                .takes_value(true)
-                .default_value("1")
-                .help("Number of clients"),
-        )
-        .arg(
-            Arg::with_name("client_duration_seconds")
-                .long("client-duration-seconds")
-                .takes_value(true)
-                .default_value("7500")
-                .value_name("SECS")
-                .help("Seconds to run benchmark, then exit"),
-        )
         .subcommand(SubCommand::with_name("bench-tps")
             .about("Run the bench-tps client")
+            .arg(
+                Arg::with_name("number_of_clients")
+                    .long("num-clients")
+                    .short('c')
+                    .takes_value(true)
+                    .default_value("1")
+                    .help("Number of clients"),
+            )
+            .arg(
+                Arg::with_name("client_duration_seconds")
+                    .long("client-duration-seconds")
+                    .takes_value(true)
+                    .default_value("7500")
+                    .value_name("SECS")
+                    .help("Seconds to run benchmark, then exit"),
+            )
             .arg(
                 Arg::with_name("client_type")
                     .long("client-type")
@@ -333,11 +333,27 @@ fn parse_matches() -> clap::ArgMatches {
         .subcommand(SubCommand::with_name("generic-client")
             .about("Run a generic client")
             .arg(
+                Arg::with_name("number_of_clients")
+                    .long("num-clients")
+                    .short('c')
+                    .takes_value(true)
+                    .default_value("1")
+                    .help("Number of clients"),
+            )
+            .arg(
+                Arg::with_name("client_duration_seconds")
+                    .long("client-duration-seconds")
+                    .takes_value(true)
+                    .default_value("7500")
+                    .value_name("SECS")
+                    .help("Seconds to run benchmark, then exit"),
+            )
+            .arg(
                 Arg::with_name("docker_image")
                     .long("docker-image")
                     .takes_value(true)
                     .value_name("<repository>/<client-name>:<tag>")
-                    .validator(|s| validate_docker_image(s.to_string()))
+                    .validator(validate_docker_image)
                     .required(true)
                     .help("Name of docker image to pull and run"),
             )
@@ -356,7 +372,7 @@ fn parse_matches() -> clap::ArgMatches {
                     .default_value("0")
                     .help("Wait for `delay-start` seconds after all validators are deployed to deploy client.
                     Use case: If client needs to connect to a specific node, but that node hasn't fully deployed yet
-                    the client may no be able to resolve the node's endpoint. `--delay-start` is used to wait so
+                    the client may not be able to resolve the node's endpoint. `--delay-start` is used to wait so
                     validators can deploy fully before launching the client. Currently only used for generic clients
                     since similar functionality is built into bench-tps-client"),
             )
@@ -451,12 +467,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let num_validators = value_t_or_exit!(matches, "number_of_validators", usize);
     let num_rpc_nodes = value_t_or_exit!(matches, "number_of_rpc_nodes", usize);
-    let num_clients = value_t_or_exit!(matches, "number_of_clients", usize);
-    let client_duration_seconds = value_t_or_exit!(matches, "client_duration_seconds", u64);
     let client_config = if let Some(matches) = matches.subcommand_matches("bench-tps") {
         let bench_tps_config = BenchTpsConfig {
-            num_clients,
-            client_duration_seconds,
+            num_clients: value_t_or_exit!(matches, "number_of_clients", usize),
+            client_duration_seconds: value_t_or_exit!(matches, "client_duration_seconds", u64),
             client_type: matches.value_of("client_type").unwrap().to_string(),
             client_to_run: matches.value_of("client_to_run").unwrap().to_string(),
             bench_tps_args: parse_and_format_transparent_args(matches.value_of("bench_tps_args")),
@@ -473,8 +487,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ClientConfig::BenchTps(bench_tps_config)
     } else if let Some(matches) = matches.subcommand_matches("generic-client") {
         let generic_config = GenericClientConfig {
-            num_clients,
-            client_duration_seconds,
+            num_clients: value_t_or_exit!(matches, "number_of_clients", usize),
+            client_duration_seconds: value_t_or_exit!(matches, "client_duration_seconds", u64),
             image: matches.value_of("docker_image").unwrap().to_string(),
             args: parse_and_format_transparent_args(matches.value_of("generic_client_args")),
             executable_path: value_t_or_exit!(matches, "executable_path", PathBuf),
@@ -483,8 +497,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         ClientConfig::Generic(generic_config)
     } else {
-        // return empty client config. will not deploy a client
-        ClientConfig::Generic(GenericClientConfig::default())
+        ClientConfig::None
     };
 
     let deploy_method = if let Some(local_path) = matches.value_of("local_path") {
@@ -742,6 +755,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             ClientConfig::Generic(ref config) => {
                 Node::new(DockerImage::new_from_string(config.image.clone())?)
             }
+            ClientConfig::None => unreachable!(),
         };
         cluster_images.set_item(client);
     }

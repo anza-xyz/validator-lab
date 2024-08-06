@@ -16,6 +16,11 @@ pub struct BenchTpsConfig {
 }
 
 impl ClientTrait for BenchTpsConfig {
+    fn executable_path(&self) -> Result<Vec<String>, Box<dyn Error>> {
+        let command = vec!["/home/solana/k8s-cluster-scripts/client-startup-script.sh".to_string()];
+        Ok(command)
+    }
+
     fn generate_client_command_flags(&self) -> Vec<String> {
         let mut flags = vec![];
 
@@ -41,13 +46,6 @@ impl ClientTrait for BenchTpsConfig {
 
         flags
     }
-
-    fn build_command(&self) -> Result<Vec<String>, Box<dyn Error>> {
-        let mut command =
-            vec!["/home/solana/k8s-cluster-scripts/client-startup-script.sh".to_string()];
-        command.extend(self.generate_client_command_flags());
-        Ok(command)
-    }
 }
 
 #[derive(Default, Clone, PartialEq, Debug)]
@@ -61,12 +59,7 @@ pub struct GenericClientConfig {
 }
 
 impl ClientTrait for GenericClientConfig {
-    fn generate_client_command_flags(&self) -> Vec<String> {
-        self.args.clone()
-    }
-
-    /// Build command to run on pod deployment
-    fn build_command(&self) -> Result<Vec<String>, Box<dyn Error>> {
+    fn executable_path(&self) -> Result<Vec<String>, Box<dyn Error>> {
         let exec_path_string = self
             .executable_path
             .clone()
@@ -78,9 +71,10 @@ impl ClientTrait for GenericClientConfig {
                     format!("Invalid Unicode data in path: {:?}", err),
                 )
             })?;
-        let mut command = vec![exec_path_string];
-        command.extend(self.generate_client_command_flags());
-        Ok(command)
+        Ok(vec![exec_path_string])
+    }
+    fn generate_client_command_flags(&self) -> Vec<String> {
+        self.args.clone()
     }
 }
 
@@ -90,6 +84,7 @@ pub enum ClientConfig {
     BenchTps(BenchTpsConfig),
     #[strum(serialize = "generic")]
     Generic(GenericClientConfig),
+    None,
 }
 
 impl ClientConfig {
@@ -97,6 +92,7 @@ impl ClientConfig {
         match self {
             ClientConfig::BenchTps(config) => config.num_clients,
             ClientConfig::Generic(config) => config.num_clients,
+            ClientConfig::None => 0,
         }
     }
 
@@ -104,11 +100,18 @@ impl ClientConfig {
         match self {
             ClientConfig::BenchTps(config) => config.build_command(),
             ClientConfig::Generic(config) => config.build_command(),
+            ClientConfig::None => Err("Client config is None".into()),
         }
     }
 }
 
 pub trait ClientTrait {
-    fn generate_client_command_flags(&self) -> Vec<String>; // Add this method
-    fn build_command(&self) -> Result<Vec<String>, Box<dyn Error>>;
+    fn executable_path(&self) -> Result<Vec<String>, Box<dyn Error>>;
+    fn generate_client_command_flags(&self) -> Vec<String>;
+    /// Build command to run on pod deployment
+    fn build_command(&self) -> Result<Vec<String>, Box<dyn Error>> {
+        let mut command = self.executable_path()?;
+        command.extend(self.generate_client_command_flags());
+        Ok(command)
+    }
 }

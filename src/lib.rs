@@ -323,7 +323,7 @@ pub fn check_directory(path: &Path, description: &str) -> Result<(), Box<dyn std
     Ok(())
 }
 
-pub fn validate_docker_image(image: String) -> Result<(), String> {
+pub fn validate_docker_image(image: &str) -> Result<(), String> {
     let parts: Vec<&str> = image.split('/').collect();
     if parts.len() != 2 || !parts[1].contains(':') {
         return Err(

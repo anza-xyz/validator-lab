@@ -177,6 +177,7 @@ curl -X POST \
     }' \
 http://<node-ip>:<external-port>
 ```
+Note: you can deploy any client through validator-lab or just completely separately and have the client send TXs or query this RPC through the `http://<node-ip>:<external-port>`. 
 
 ## Generic Clients
 Bring your own client and deploy it in a Validator Lab cluster!
@@ -189,18 +190,20 @@ Key points/steps:
 
 For example, let's assume we have a client sending spam. And it takes the following arguments:
 ```
-/home/solana/spammer-executable --target-node <ip:port> --thread-sleep-ms <ms-between-spam-batches> --spam-mode <client-specific-mode>
+/home/solana/spammer-executable --target-node <kubernetes_domain_name>:<port> --thread-sleep-ms <ms-between-spam-batches> --spam-mode <client-specific-mode>
 ```
+where `<kubernetes_domain_name>:<port>` is the domain name and port of the kubernetes service running the validator you want to target. See: [Node Naming Conventions](#kubernetes_domain_name)
+
 When we go to deploy the generic client, we deploy it in a similar manner to how we deploy the bench-tps client:
 ```
 cargo run --bin cluster -- -n <namespace>
 ...
-generic-client --docker-image <client-docker-image> --executable-path <path-to-executable-in-docker-image> --delay-start <seconds-after-cluster-is-deployed-before-deploying-client> --generic-client-args 'target-node=<ip:port> thread-sleep-ms=<ms-between-spam-batches> spam-mode=<client-specific-mode>' 
+generic-client --docker-image <client-docker-image> --executable-path <path-to-executable-in-docker-image> --delay-start <seconds-after-cluster-is-deployed-before-deploying-client> --generic-client-args 'target-node=<kubernetes_domain_name>:<port> thread-sleep-ms=<ms-between-spam-batches> spam-mode=<client-specific-mode>' 
 ```
 
 4) Any flag or value the client needs that is cluster specific should be read in from an environment variable. For example, say the client requires the following arguments:
 ```
-/home/solana/spammer-executable --target-node <ip:port> --shred-version <version>
+/home/solana/spammer-executable --target-node <kubernetes_domain_name>:<port> --shred-version <version>
 ```
 Shred-version is cluster specific; it is not known when you deploy a cluster. Modify the shred-version argument in the client code to read in the environment variable `SHRED_VERSION` from the host.
 Example:
@@ -233,8 +236,9 @@ SHRED_VERSION               # cluster shred version
 ```
 ^ More environment variables to come!
 
-5) Node naming conventions.
-Say you want to launch your client and send transactions to a specific validator. Kubernetes makes it easy to identify deployed nodes. Node naming conventions:
+<a name="kubernetes_domain_name"></a>
+### Node Naming Conventions in Kubernetes
+Say you want to launch your client and send transactions to a specific validator. Kubernetes makes it easy to identify deployed nodes via `<kubernetes_domain_name>:<port>`. Node naming conventions:
 ```
 <node-name>-service.<namespace>.svc.cluster.local:<port>
 ```

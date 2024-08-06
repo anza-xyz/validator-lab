@@ -253,7 +253,7 @@ impl Genesis {
         for child in children? {
             let output = child.wait_with_output()?;
             if !output.status.success() {
-                return Err(output.status.to_string().into());
+                return Err(String::from_utf8_lossy(&output.stderr).into());
             }
         }
 
@@ -301,7 +301,7 @@ impl Genesis {
         let child = Command::new(executable_path)
             .args(args)
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stderr(Stdio::piped())
             .spawn()?;
 
         Ok(child)
