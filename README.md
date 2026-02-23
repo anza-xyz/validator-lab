@@ -1,3 +1,6 @@
+# Archival
+As of February 23, 2026, this repo has been marked for archival and may be deleted in the future
+
 # Validator Lab
 ### Deploy Validator Clusters for Testing
 
